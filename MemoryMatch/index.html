@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#8edcff" />
+<title>Memory Match — Bharat's Game World</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Fredoka:wght@500;600;700&display=swap");
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%}
+body{
+  font-family:"Fredoka",system-ui,sans-serif;color:#173b5f;overflow-x:hidden;min-height:100vh;
+  background:linear-gradient(180deg,#bdf1ff 0%,#e9fbff 45%,#b9f0b9 46%,#69cd61 100%);
+  display:flex;flex-direction:column;align-items:center;padding:18px 14px 40px;
+}
+.topbar{width:min(680px,100%);display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.homeBtn{
+  text-decoration:none;font-weight:800;color:#17406b;background:rgba(255,255,255,.85);
+  padding:10px 16px;border-radius:999px;box-shadow:0 6px 14px rgba(40,100,140,.15);font-size:1.05rem;
+}
+.homeBtn:active{transform:translateY(2px)}
+h1{font-family:"Baloo 2",sans-serif;font-size:clamp(1.8rem,6vw,2.6rem);color:#456b92;text-align:center;
+  text-shadow:0 3px 0 rgba(255,255,255,.9)}
+.subtitle{text-align:center;font-weight:700;color:#31526a;margin:2px 0 12px}
+.stats{width:min(680px,100%);display:flex;gap:10px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+.stat{background:rgba(255,255,255,.88);border-radius:18px;padding:8px 18px;font-weight:800;color:#17406b;
+  box-shadow:0 6px 14px rgba(40,100,140,.12);font-size:1.05rem}
+.stat b{color:#ff7b54}
+#board{width:min(680px,100%);display:grid;gap:12px;justify-content:center}
+.card{perspective:600px;cursor:pointer;aspect-ratio:1}
+.cardInner{position:relative;width:100%;height:100%;transition:transform .45s;transform-style:preserve-3d}
+.card.flipped .cardInner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;display:grid;place-items:center;border-radius:22px;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border:5px solid rgba(255,255,255,.7);box-shadow:0 8px 0 rgba(0,0,0,.10),0 14px 20px rgba(40,70,120,.14)}
+.front{background:linear-gradient(180deg,#8f7cff,#5b4bd6);font-size:2.2rem;color:#fff}
+.back{background:#fff;transform:rotateY(180deg);font-size:clamp(2rem,9vw,3.2rem)}
+.card.matched .back{background:linear-gradient(180deg,#d8ffd0,#aef29a);animation:pop .45s ease}
+.card.matched{pointer-events:none}
+@keyframes pop{0%{transform:rotateY(180deg) scale(1)}50%{transform:rotateY(180deg) scale(1.18)}100%{transform:rotateY(180deg) scale(1)}}
+.overlay{position:fixed;inset:0;background:rgba(23,59,95,.55);display:none;place-items:center;z-index:50;padding:20px}
+.overlay.show{display:grid}
+.panel{background:#fff;border-radius:32px;padding:34px 30px;text-align:center;max-width:420px;width:100%;
+  border:6px solid #8fea55;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.panel h2{font-family:"Baloo 2",sans-serif;font-size:2rem;color:#ff7b54;margin-bottom:8px}
+.panel p{font-weight:700;color:#31526a;margin-bottom:18px}
+.btnRow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.bigBtn{border:none;cursor:pointer;font-family:"Baloo 2",sans-serif;font-size:1.25rem;font-weight:800;color:#fff;
+  padding:14px 26px;border-radius:999px;background:linear-gradient(180deg,#8fea55,#3caf32);
+  box-shadow:0 6px 0 #267929;transition:transform .1s}
+.bigBtn:active{transform:translateY(4px);box-shadow:0 2px 0 #267929}
+.bigBtn.alt{background:linear-gradient(180deg,#8edcff,#3d9be9);box-shadow:0 6px 0 #1c5fa8}
+.bigBtn.alt:active{box-shadow:0 2px 0 #1c5fa8}
+.confetti{position:fixed;top:-40px;font-size:1.6rem;z-index:60;pointer-events:none;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="homeBtn" href="../">🏠 Home</a>
+  <div class="stat">Level <b id="level">1</b></div>
+</div>
+<h1>🧠 Memory Match</h1>
+<div class="subtitle">Flip the cards and find the pairs!</div>
+<div class="stats">
+  <div class="stat">Moves: <b id="moves">0</b></div>
+  <div class="stat">Pairs: <b id="pairs">0 / 3</b></div>
+</div>
+<div id="board"></div>
+
+<div class="overlay" id="winOverlay">
+  <div class="panel">
+    <h2>🎉 Amazing!</h2>
+    <p id="winText">You found them all!</p>
+    <div class="btnRow">
+      <button class="bigBtn alt" id="againBtn">🔁 Play Again</button>
+      <button class="bigBtn" id="nextBtn">Next Level ➜</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ANIMALS = ["🦁","🐼","🐸","🐵","🐘","🐧","🐯","🐨"];
+const LEVELS = [3,4,6,8]; // pairs per level
+let levelIdx = 0, moves = 0, pairsFound = 0, firstCard = null, lockBoard = false;
+let audioCtx = null;
+
+function tone(freq, dur=0.18, type="sine", vol=0.22, when=0){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const t = audioCtx.currentTime + when;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur);
+  }catch(e){}
+}
+const sndFlip = ()=>tone(500,0.08,"triangle",0.15);
+const sndMatch = ()=>{tone(660,0.12,"sine",0.22);tone(880,0.18,"sine",0.22,0.1);};
+const sndWin = ()=>{[523,659,784,1047].forEach((f,i)=>tone(f,0.22,"sine",0.22,i*0.14));};
+
+function buildBoard(){
+  const pairs = LEVELS[levelIdx];
+  const picks = [...ANIMALS].sort(()=>Math.random()-0.5).slice(0,pairs);
+  const deck = [...picks,...picks].sort(()=>Math.random()-0.5);
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  const cols = pairs <= 3 ? 3 : pairs <= 4 ? 4 : 4;
+  board.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+  moves = 0; pairsFound = 0; firstCard = null; lockBoard = false;
+  document.getElementById("moves").textContent = "0";
+  document.getElementById("pairs").textContent = `0 / ${pairs}`;
+  document.getElementById("level").textContent = levelIdx + 1;
+  deck.forEach(emoji=>{
+    const c = document.createElement("div");
+    c.className = "card"; c.dataset.emoji = emoji;
+    c.innerHTML = `<div class="cardInner">
+        <div class="face front">❓</div>
+        <div class="face back">${emoji}</div>
+      </div>`;
+    c.addEventListener("click", ()=>flipCard(c));
+    board.appendChild(c);
+  });
+}
+
+function flipCard(c){
+  if(lockBoard || c.classList.contains("flipped")) return;
+  sndFlip();
+  c.classList.add("flipped");
+  if(!firstCard){ firstCard = c; return; }
+  moves++;
+  document.getElementById("moves").textContent = moves;
+  if(firstCard.dataset.emoji === c.dataset.emoji){
+    firstCard.classList.add("matched"); c.classList.add("matched");
+    sndMatch();
+    pairsFound++;
+    document.getElementById("pairs").textContent = `${pairsFound} / ${LEVELS[levelIdx]}`;
+    firstCard = null;
+    if(pairsFound === LEVELS[levelIdx]) setTimeout(win, 600);
+  } else {
+    lockBoard = true;
+    const a = firstCard; firstCard = null;
+    setTimeout(()=>{ a.classList.remove("flipped"); c.classList.remove("flipped"); lockBoard = false; }, 1000);
+  }
+}
+
+function confetti(){
+  const emojis = ["🎉","⭐","🎈","🌟","💫","🥳"];
+  for(let i=0;i<60;i++){
+    const s = document.createElement("span");
+    s.className = "confetti";
+    s.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+    s.style.left = Math.random()*100 + "vw";
+    s.style.animationDuration = (2+Math.random()*2.5) + "s";
+    s.style.fontSize = (1+Math.random()*1.4) + "rem";
+    document.body.appendChild(s);
+    setTimeout(()=>s.remove(), 5000);
+  }
+}
+
+function win(){
+  sndWin(); confetti();
+  document.getElementById("winText").textContent =
+    `You found all ${LEVELS[levelIdx]} pairs in ${moves} moves!`;
+  document.getElementById("nextBtn").style.display = levelIdx < LEVELS.length-1 ? "" : "none";
+  document.getElementById("winOverlay").classList.add("show");
+}
+
+document.getElementById("againBtn").onclick = ()=>{
+  document.getElementById("winOverlay").classList.remove("show"); buildBoard();
+};
+document.getElementById("nextBtn").onclick = ()=>{
+  document.getElementById("winOverlay").classList.remove("show");
+  levelIdx = Math.min(levelIdx+1, LEVELS.length-1); buildBoard();
+};
+
+buildBoard();
+</script>
+</body>
+</html>
