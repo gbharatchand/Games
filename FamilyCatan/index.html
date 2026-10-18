@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Family Catan</title>
+<style>
+  :root {
+    --felt: #1d5c38;
+    --panel: #f7f3e8;
+    --ink: #2b2b2b;
+    --accent: #c0392b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--felt); color: var(--ink);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    touch-action: manipulation;
+  }
+  #app { width: 100%; max-width: 1100px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  header {
+    background: var(--panel); border-radius: 12px; padding: 8px 14px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  #standings { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pchip {
+    display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px;
+    background: #fff; border: 2px solid #ccc; font-size: .85rem; font-weight: 600;
+  }
+  .pchip .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #999; }
+  .pchip.active { border-color: #111; box-shadow: 0 0 0 2px #1113; }
+  #turnBanner {
+    background: var(--panel); border-radius: 12px; padding: 8px 14px; font-weight: 700;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  #turnBanner .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #555; }
+  #main { display: flex; gap: 10px; align-items: stretch; }
+  #boardWrap {
+    flex: 1 1 auto; background: #17452a; border-radius: 12px; padding: 6px;
+    display: flex; justify-content: center; align-items: center; min-width: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  #board { width: 100%; height: auto; max-height: 62vh; }
+  #panel {
+    flex: 0 0 300px; background: var(--panel); border-radius: 12px; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow-y: auto;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  @media (max-width: 760px) {
+    #main { flex-direction: column; }
+    #panel { flex: none; max-height: none; }
+    #board { max-height: 52vh; }
+  }
+  .btn {
+    border: none; border-radius: 10px; padding: 10px 12px; font-size: .95rem; font-weight: 700;
+    cursor: pointer; background: #fff; border: 2px solid #bbb; color: var(--ink);
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.green { background: #27ae60; border-color: #27ae60; color: #fff; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  #diceArea { display: flex; align-items: center; gap: 12px; }
+  #dice { font-size: 2.2rem; }
+  #resBar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .res {
+    background: #fff; border: 2px solid #ddd; border-radius: 10px; padding: 6px 8px;
+    font-size: .85rem; font-weight: 700; min-width: 58px; text-align: center;
+  }
+  .res small { display: block; font-weight: 400; font-size: .7rem; color: #666; }
+  #buildBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #buildBtns .btn { font-size: .82rem; padding: 8px 6px; }
+  #log {
+    background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px;
+    font-size: .8rem; max-height: 160px; overflow-y: auto;
+  }
+  #log div { padding: 2px 0; border-bottom: 1px dotted #eee; }
+  .hint { font-size: .85rem; background: #fff8e1; border: 1px solid #f0d060; border-radius: 8px; padding: 8px; }
+  /* SVG board */
+  .hex { cursor: default; }
+  .hex.robber-ok { cursor: pointer; }
+  .hex.robber-ok polygon { stroke: #ffeb3b; stroke-width: 4; }
+  .vspot { fill: rgba(255,255,255,.55); stroke: #fff; stroke-width: 2; cursor: pointer; }
+  .vspot:hover { fill: #ffeb3b; }
+  .espot { stroke: rgba(255,255,255,.7); stroke-width: 10; cursor: pointer; fill: none; }
+  .espot:hover { stroke: #ffeb3b; }
+  .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
+  .settlement, .city { pointer-events: none; }
+  /* overlays */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .card {
+    background: var(--panel); border-radius: 16px; padding: 22px; max-width: 480px; width: 100%;
+    max-height: 88vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  .card h2 { margin-top: 0; }
+  .card input[type=text] {
+    width: 100%; padding: 10px; margin: 6px 0; border-radius: 8px; border: 2px solid #bbb; font-size: 1rem;
+  }
+  .card .btnrow { margin-top: 12px; }
+  .pcolor-pick { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .pcolor-pick .dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #555; }
+  .tradeRow { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .tradeRow select { padding: 8px; border-radius: 8px; font-size: .9rem; }
+  .victimBtn { display: block; width: 100%; margin: 6px 0; }
+  #winConfetti { font-size: 3rem; text-align: center; }
+  .rulesList { font-size: .9rem; line-height: 1.5; }
+  .rulesList li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🏝️ Family Catan</h1>
+    <div id="standings"></div>
+    <div class="btnrow">
+      <button class="btn" id="rulesBtn">❓ Rules</button>
+      <button class="btn" id="newGameBtn">🔄 New Game</button>
+    </div>
+  </header>
+  <div id="turnBanner"><span class="dot" id="turnDot"></span><span id="turnText">Set up a new game</span></div>
+  <div id="main">
+    <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg></div>
+    <div id="panel">
+      <div class="hint" id="hint">Welcome! Tap 🔄 New Game to start.</div>
+      <div id="diceArea">
+        <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
+        <div id="dice">🎲🎲</div>
+      </div>
+      <div><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
+      <div><strong>Build</strong><div id="buildBtns">
+        <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
+        <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
+        <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
+        <button class="btn" id="bankTradeBtn">🔄 Bank 4:1</button>
+      </div></div>
+      <div><strong>Trade with players</strong>
+        <div class="btnrow"><button class="btn" id="offerTradeBtn">🤝 Make Offer</button></div>
+      </div>
+      <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
+      <div><strong>📜 Log</strong><div id="log"></div></div>
+    </div>
+  </div>
+</div>
+<div id="overlayRoot"></div>
+<script>
+'use strict';
+
+/* ================= Constants & geometry ================= */
+const HEX_SIZE = 60;
+const RES = ['wood','brick','sheep','wheat','ore'];
+const RES_ICON = { wood:'🪵', brick:'🧱', sheep:'🐑', wheat:'🌾', ore:'⛰️' };
+const RES_NAME = { wood:'Wood', brick:'Brick', sheep:'Sheep', wheat:'Wheat', ore:'Ore' };
+const TERRAIN = {
+  wood:  { color:'#3a8a4a', res:'wood',  icon:'🌲' },
+  wheat: { color:'#d9a83c', res:'wheat', icon:'🌾' },
+  sheep: { color:'#8fd18a', res:'sheep', icon:'🐑' },
+  brick: { color:'#b5542d', res:'brick', icon:'🧱' },
+  ore:   { color:'#7d8590', res:'ore',   icon:'⛰️' },
+  desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
+};
+const COSTS = {
+  road:      { brick:1, wood:1 },
+  settlement:{ brick:1, wood:1, sheep:1, wheat:1 },
+  city:      { wheat:2, ore:3 },
+};
+const PLAYER_COLORS = [
+  { name:'Red',    color:'#e74c3c' },
+  { name:'Blue',   color:'#3498db' },
+  { name:'Orange', color:'#f39c12' },
+  { name:'White',  color:'#f5f5f5' },
+];
+const WIN_VP = 10;
+
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function vKey(x,y){ return Math.round(x)+','+Math.round(y); }
+function edgeKey(a,b){ return a<b ? a+'|'+b : b+'|'+a; }
+function hexCenter(q,r){ return { x: HEX_SIZE*Math.sqrt(3)*(q+r/2), y: HEX_SIZE*1.5*r }; }
+function hexCorners(cx,cy){
+  const p=[];
+  for(let i=0;i<6;i++){ const a=Math.PI/180*(60*i-30); p.push({x:cx+HEX_SIZE*Math.cos(a), y:cy+HEX_SIZE*Math.sin(a)}); }
+  return p;
+}
+
+/* ================= Board data ================= */
+function buildBoardData(){
+  const rows=[{r:0,qs:[0,1,2]},{r:1,qs:[-1,0,1,2]},{r:2,qs:[-2,-1,0,1,2]},{r:3,qs:[-2,-1,0,1]},{r:4,qs:[-2,-1,0]}];
+  const terrains=shuffle(['wood','wood','wood','wood','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','ore','ore','ore','desert']);
+  const numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12]);
+  const hexes=[]; let id=0;
+  rows.forEach(row=>row.qs.forEach(q=>{
+    const t=terrains[id];
+    hexes.push({ id:id, q:q, r:row.r, terrain:t, number: t==='desert'?null:numbers.pop() });
+    id++;
+  }));
+  const vertices={}, edges={};
+  hexes.forEach(h=>{
+    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
+    const vks=corners.map(p=>vKey(p.x,p.y));
+    vks.forEach((k,i)=>{
+      if(!vertices[k]) vertices[k]={ key:k, x:corners[i].x, y:corners[i].y, hexes:[], owner:-1, kind:null, neighbors:[] };
+      vertices[k].hexes.push(h.id);
+    });
+    for(let i=0;i<6;i++){
+      const a=vks[i], b=vks[(i+1)%6], ek=edgeKey(a,b);
+      if(!edges[ek]) edges[ek]={ key:ek, a:a, b:b, owner:-1 };
+      if(!vertices[a].neighbors.includes(b)) vertices[a].neighbors.push(b);
+      if(!vertices[b].neighbors.includes(a)) vertices[b].neighbors.push(a);
+    }
+  });
+  const robberHex = hexes.find(h=>h.terrain==='desert').id;
+  return { hexes, vertices, edges, robberHex };
+}
+
+/* ================= Game state ================= */
+let S=null; // state
+function newGame(playerNames){
+  const b=buildBoardData();
+  S={
+    hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
+    players: playerNames.map((n,i)=>({
+      name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color, colorName:PLAYER_COLORS[i].name,
+      res:{wood:0,brick:0,sheep:0,wheat:0,ore:0},
+      longest:0, hasLongest:false,
+    })),
+    turn:0, phase:'setup', dice:[1,1], rolled:false,
+    setupQueue:[], setupIdx:0, setupSub:'settlement', // 'settlement' then 'road'
+    mode:null, // buildRoad | buildSettlement | buildCity | moveRobber
+    discardQueue:[], stealVictims:[],
+    log:[], winner:-1,
+  };
+  const n=S.players.length;
+  for(let i=0;i<n;i++) S.setupQueue.push(i);
+  for(let i=n-1;i>=0;i--) S.setupQueue.push(i);
+  log('Game started! '+n+' players. Place your first settlement + road.');
+}
+function cur(){ return S.players[S.turn]; }
+function totalCards(p){ return RES.reduce((s,r)=>s+p.res[r],0); }
+function vp(p){
+  const i=S.players.indexOf(p);
+  let v=0;
+  for(const k in S.vertices){ const vtx=S.vertices[k]; if(vtx.owner===i) v+= vtx.kind==='city'?2:1; }
+  if(p.hasLongest) v+=2;
+  return v;
+}
+function canAfford(p,cost){ return Object.keys(cost).every(r=>p.res[r]>=cost[r]); }
+function payCost(p,cost){ Object.keys(cost).forEach(r=>{ p.res[r]-=cost[r]; }); }
+function giveRes(p,res,n){ p.res[res]+=n; }
+function log(msg){
+  S.log.unshift(msg);
+  if(S.log.length>40) S.log.pop();
+  if(typeof document!=='undefined') renderLog();
+}
+
+/* ================= Rendering ================= */
+const svgNS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+function el(tag,attrs,parent){ const e=document.createElementNS(svgNS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e; }
+
+function renderBoard(){
+  const svg=$('board'); svg.innerHTML='';
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  S.hexes.forEach(h=>{
+    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
+    corners.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+  });
+  const pad=70;
+  svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
+  const g=el('g',{},svg);
+  // hexes
+  S.hexes.forEach(h=>{
+    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
+    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
+    hg.addEventListener('click',()=>onHexClick(h.id));
+    el('polygon',{points:corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' '), fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
+    const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
+    t.textContent=TERRAIN[h.terrain].icon;
+    if(h.number!==null){
+      const hot=(h.number===6||h.number===8);
+      el('circle',{cx:c.x, cy:c.y+22, r:17, fill:'#f7f3e8', stroke:'#555','stroke-width':1.5},hg);
+      const nt=el('text',{x:c.x, y:c.y+29, 'text-anchor':'middle','font-size':'20','font-weight':'bold', fill:hot?'#c0392b':'#222'},hg);
+      nt.textContent=h.number;
+      const dots='•'.repeat(h.number<=7? h.number-1 : 13-h.number);
+      const dt=el('text',{x:c.x, y:c.y+42, 'text-anchor':'middle','font-size':'10', fill:hot?'#c0392b':'#222'},hg);
+      dt.textContent=dots;
+    }
+    if(h.id===S.robberHex){
+      const rt=el('text',{x:c.x, y:c.y+4, 'text-anchor':'middle','font-size':'34'},hg);
+      rt.textContent='🕵️';
+    }
+  });
+  // roads
+  for(const ek in S.edges){
+    const e=S.edges[ek];
+    if(e.owner>=0){
+      const a=S.vertices[e.a], b=S.vertices[e.b];
+      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':8},g);
+      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:'rgba(0,0,0,.25)','stroke-width':8,'stroke-dasharray':'2 10'},g);
+    }
+  }
+  // clickable edge spots (build modes)
+  if(S.mode==='buildRoad'||S.mode==='setupRoad'){
+    for(const ek in S.edges){
+      const e=S.edges[ek];
+      if(e.owner===-1 && edgeValid(e)){
+        const a=S.vertices[e.a], b=S.vertices[e.b];
+        const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'espot'},g);
+        l.addEventListener('click',ev=>{ev.stopPropagation(); onEdgeClick(ek);});
+      }
+    }
+  }
+  // settlements & cities
+  for(const k in S.vertices){
+    const v=S.vertices[k];
+    if(v.owner>=0){
+      const col=S.players[v.owner].color;
+      if(v.kind==='city'){
+        el('circle',{cx:v.x,cy:v.y,r:15,fill:col,stroke:'#222','stroke-width':2.5,class:'city'},g);
+        el('circle',{cx:v.x,cy:v.y,r:7,fill:'none',stroke:'#fff','stroke-width':2.5,class:'city'},g);
+      }else{
+        el('circle',{cx:v.x,cy:v.y,r:11,fill:col,stroke:'#222','stroke-width':2.5,class:'settlement'},g);
+      }
+    }
+  }
+  // clickable vertex spots
+  if(S.mode==='buildSettlement'||S.mode==='buildCity'||S.mode==='setupSettlement'){
+    for(const k in S.vertices){
+      const v=S.vertices[k];
+      if(vertexValid(v)){
+        const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
+        c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexClick(k);});
+      }
+    }
+  }
+}
+
+function renderStandings(){
+  const d=$('standings'); d.innerHTML='';
+  S.players.forEach((p,i)=>{
+    const c=document.createElement('div');
+    c.className='pchip'+(i===S.turn&&S.phase!=='gameover'?' active':'');
+    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}`;
+    d.appendChild(c);
+  });
+}
+function renderRes(){
+  const p=cur(), bar=$('resBar'); bar.innerHTML='';
+  $('resTitle').textContent='Resources — '+p.name+' ('+totalCards(p)+' cards)';
+  RES.forEach(r=>{
+    const d=document.createElement('div'); d.className='res';
+    d.innerHTML=`${RES_ICON[r]} ${p.res[r]}<small>${RES_NAME[r]}</small>`;
+    bar.appendChild(d);
+  });
+}
+function renderLog(){
+  const d=$('log'); if(!d) return; d.innerHTML='';
+  S.log.forEach(m=>{ const x=document.createElement('div'); x.textContent=m; d.appendChild(x); });
+}
+function setHint(t){ $('hint').innerHTML=t; }
+function refresh(){
+  renderBoard(); renderStandings(); renderRes(); renderLog();
+  const p=S.players[S.turn];
+  $('turnDot').style.background=p.color;
+  if(S.phase==='gameover'){ $('turnText').textContent='🏆 '+S.players[S.winner].name+' wins!'; }
+  else if(S.phase==='setup'){ $('turnText').textContent=p.name+' — setup: place '+(S.setupSub==='settlement'?'a settlement':'a road'); }
+  else { $('turnText').textContent=p.name+"'s turn"; }
+  $('rollBtn').disabled = S.phase!=='play' || S.rolled;
+  $('endTurnBtn').disabled = S.phase!=='play' || !S.rolled;
+  updateBuildButtons();
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ================= Placement validity ================= */
+function vertexValid(v){
+  const i=S.turn;
+  if(S.mode==='buildCity') return v.owner===i && v.kind==='settlement';
+  if(v.owner!==-1) return false;
+  for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; } // distance rule
+  if(S.mode==='setupSettlement') return true;
+  if(S.mode==='buildSettlement'){
+    // must touch own road
+    for(const nb of v.neighbors){ if(S.edges[edgeKey(v.key,nb)].owner===i) return true; }
+    return false;
+  }
+  return false;
+}
+function edgeValid(e){
+  if(e.owner!==-1) return false;
+  const i=S.turn;
+  const a=S.vertices[e.a], b=S.vertices[e.b];
+  if(S.mode==='setupRoad'){
+    // must touch the settlement just placed (tracked in S.setupVertex)
+    return e.a===S.setupVertex || e.b===S.setupVertex;
+  }
+  if(a.owner===i || b.owner===i) return true;
+  for(const ek in S.edges){
+    const o=S.edges[ek];
+    if(o.owner===i && (o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+  }
+  return false;
+}
+
+/* ================= Dice & production ================= */
+function rollDice(){
+  if(S.phase!=='play'||S.rolled) return;
+  S.rolled=true;
+  const d1=1+Math.floor(Math.random()*6), d2=1+Math.floor(Math.random()*6);
+  S.dice=[d1,d2];
+  const sum=d1+d2;
+  $('dice').textContent='⚀⚁⚂⚃⚄⚅'[d1-1]+'⚀⚁⚂⚃⚄⚅'[d2-1];
+  if(sum===7){ log(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
+  else{
+    log(`🎲 ${cur().name} rolled ${sum}`);
+    distribute(sum);
+  }
+  refresh();
+}
+function distribute(sum){
+  S.hexes.forEach(h=>{
+    if(h.number!==sum||h.id===S.robberHex||!h.terrain||TERRAIN[h.terrain].res===null) return;
+    const res=TERRAIN[h.terrain].res;
+    for(const k in S.vertices){
+      const v=S.vertices[k];
+      if(v.owner>=0 && v.hexes.includes(h.id)){
+        giveRes(S.players[v.owner],res, v.kind==='city'?2:1);
+      }
+    }
+  });
+}
+
+/* ================= Robber ================= */
+function startRobber(){
+  S.discardQueue=[];
+  S.players.forEach((p,i)=>{
+    const n=totalCards(p);
+    if(n>7) S.discardQueue.push({player:i, must:Math.floor(n/2)});
+  });
+  if(S.discardQueue.length) showDiscardModal();
+  else { S.mode='moveRobber'; setHint('🕵️ Tap a hex to move the robber.'); }
+}
+function showDiscardModal(){
+  const dq=S.discardQueue[0], p=S.players[dq.player];
+  const chosen={wood:0,brick:0,sheep:0,wheat:0,ore:0};
+  const ov=overlay(`<h2>🕵️ Robber! ${escapeHtml(p.name)} discards ${dq.must}</h2>
+    <p>You have ${totalCards(p)} cards — tap cards to discard ${dq.must}.</p>
+    <div id="discRes" class="btnrow"></div>
+    <p id="discCount"></p>
+    <div class="btnrow"><button class="btn primary" id="discOk" disabled>Done</button></div>`);
+  const render=()=>{
+    const box=ov.querySelector('#discRes'); box.innerHTML='';
+    let sum=0; for(const r in chosen) sum+=chosen[r];
+    ov.querySelector('#discCount').textContent=`Selected ${sum} / ${dq.must}`;
+    ov.querySelector('#discOk').disabled = sum!==dq.must;
+    RES.forEach(r=>{
+      const b=document.createElement('button'); b.className='btn';
+      b.innerHTML=`${RES_ICON[r]} ${p.res[r]} <b>(-${chosen[r]})</b>`;
+      box.appendChild(b);
+    });
+  };
+  render();
+  ov.querySelector('#discRes').addEventListener('click',e=>{
+    const btn=e.target.closest('button'); if(!btn) return;
+    const idx=[...ov.querySelector('#discRes').children].indexOf(btn);
+    const r=RES[idx]; let sum=0; for(const k in chosen) sum+=chosen[k];
+    if(sum<dq.must && chosen[r]<p.res[r]) chosen[r]++;       // tap to add
+    else if(chosen[r]>0) chosen[r]--;                        // tap again to remove
+    render();
+  });
+  ov.querySelector('#discOk').onclick=()=>{
+    RES.forEach(r=>{ p.res[r]-=chosen[r]; });
+    log(`🕵️ ${p.name} discarded ${dq.must} cards.`);
+    S.discardQueue.shift();
+    closeOverlay();
+    if(S.discardQueue.length) showDiscardModal();
+    else { S.mode='moveRobber'; setHint('🕵️ Tap a hex to move the robber.'); refresh(); }
+  };
+}
+function onHexClick(id){
+  if(S.mode!=='moveRobber'||id===S.robberHex) return;
+  S.robberHex=id; S.mode=null;
+  const victims=new Set();
+  for(const k in S.vertices){
+    const v=S.vertices[k];
+    if(v.owner>=0 && v.owner!==S.turn && v.hexes.includes(id) && totalCards(S.players[v.owner])>0) victims.add(v.owner);
+  }
+  log(`🕵️ ${cur().name} moved the robber.`);
+  if(victims.size===0){ setHint('Robber moved. No one to steal from.'); }
+  else if(victims.size===1){
+    const vi=[...victims][0]; stealFrom(vi);
+  }else{
+    const ov=overlay(`<h2>🕵️ Steal from whom?</h2>`+
+      [...victims].map(vi=>`<button class="btn victimBtn" data-vi="${vi}">Steal from ${escapeHtml(S.players[vi].name)}</button>`).join(''));
+    ov.addEventListener('click',e=>{
+      const b=e.target.closest('button[data-vi]'); if(!b) return;
+      closeOverlay(); stealFrom(parseInt(b.dataset.vi));
+    });
+  }
+  refresh();
+}
+function stealFrom(vi){
+  const victim=S.players[vi], hand=[];
+  RES.forEach(r=>{ for(let i=0;i<victim.res[r];i++) hand.push(r); });
+  if(!hand.length){ setHint('No cards to steal.'); return; }
+  const r=hand[Math.floor(Math.random()*hand.length)];
+  victim.res[r]--; cur().res[r]++;
+  log(`🕵️ ${cur().name} stole 1 ${RES_ICON[r]} from ${victim.name}.`);
+  setHint('Robber done. Build, trade, or end your turn.');
+}
+
+/* ================= Longest road ================= */
+function longestRoadFor(pi){
+  const adj={};
+  for(const ek in S.edges){
+    const e=S.edges[ek];
+    if(e.owner===pi){
+      (adj[e.a]=adj[e.a]||[]).push(e.b);
+      (adj[e.b]=adj[e.b]||[]).push(e.a);
+    }
+  }
+  let best=0; const used=new Set();
+  function dfs(v,len){
+    if(len>best) best=len;
+    for(const nb of (adj[v]||[])){
+      const ek=edgeKey(v,nb);
+      if(!used.has(ek)){ used.add(ek); dfs(nb,len+1); used.delete(ek); }
+    }
+  }
+  for(const v in adj) dfs(v,0);
+  return best;
+}
+function updateLongest(){
+  let bestLen=0, holder=-1, tie=false;
+  S.players.forEach((p,i)=>{
+    p.longest=longestRoadFor(i);
+    if(p.longest>=5){
+      if(p.longest>bestLen){ bestLen=p.longest; holder=i; tie=false; }
+      else if(p.longest===bestLen){ tie=true; }
+    }
+  });
+  S.players.forEach((p,i)=>{
+    const had=p.hasLongest;
+    p.hasLongest = (!tie && i===holder);
+    if(p.hasLongest&&!had) log(`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
+  });
+}
+function checkWin(){
+  for(let i=0;i<S.players.length;i++){
+    if(vp(S.players[i])>=WIN_VP){
+      S.phase='gameover'; S.winner=i; S.mode=null;
+      log(`🏆 ${S.players[i].name} wins with ${vp(S.players[i])} VP!`);
+      showWin(); return true;
+    }
+  }
+  return false;
+}
+
+/* ================= Building ================= */
+function onVertexClick(k){
+  const v=S.vertices[k], p=cur(), i=S.turn;
+  if(S.mode==='setupSettlement'){
+    v.owner=i; v.kind='settlement'; S.setupVertex=k; S.mode='setupRoad';
+    log(`🏠 ${p.name} placed a settlement.`);
+    setHint('Now tap a highlighted edge to place your road.');
+  }else if(S.mode==='buildSettlement'){
+    if(!canAfford(p,COSTS.settlement)) return;
+    payCost(p,COSTS.settlement); v.owner=i; v.kind='settlement'; S.mode=null;
+    log(`🏠 ${p.name} built a settlement.`);
+    setHint('Settlement built!');
+  }else if(S.mode==='buildCity'){
+    if(!canAfford(p,COSTS.city)) return;
+    payCost(p,COSTS.city); v.kind='city'; S.mode=null;
+    log(`🏘️ ${p.name} built a city.`);
+    setHint('City built!');
+  }
+  updateLongest(); checkWin(); refresh();
+}
+function onEdgeClick(ek){
+  const e=S.edges[ek], p=cur(), i=S.turn;
+  if(S.mode==='setupRoad'){
+    e.owner=i;
+    log(`🛣️ ${p.name} placed a road.`);
+    // starting resources on 2nd placement round
+    const round2 = S.setupIdx>=S.players.length;
+    if(round2){
+      const v=S.vertices[S.setupVertex];
+      v.hexes.forEach(hid=>{
+        const h=S.hexes[hid], res=TERRAIN[h.terrain].res;
+        if(res) giveRes(p,res,1);
+      });
+      log(`🎁 ${p.name} collects starting resources.`);
+    }
+    S.setupIdx++; S.setupVertex=null;
+    if(S.setupIdx>=S.setupQueue.length){
+      S.phase='play'; S.turn=S.setupQueue[0]; S.rolled=false; S.mode=null;
+      log('Setup done! Game begins.');
+      showPassDevice();
+    }else{
+      S.turn=S.setupQueue[S.setupIdx]; S.mode='setupSettlement';
+      setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
+    }
+  }else if(S.mode==='buildRoad'){
+    if(!canAfford(p,COSTS.road)) return;
+    payCost(p,COSTS.road); e.owner=i; S.mode=null;
+    log(`🛣️ ${p.name} built a road.`);
+    setHint('Road built!');
+  }
+  updateLongest(); checkWin(); refresh();
+}
+function updateBuildButtons(){
+  const inPlay=S.phase==='play';
+  $('buildRoad').disabled = !inPlay || S.mode==='moveRobber';
+  $('buildSettle').disabled = !inPlay || S.mode==='moveRobber';
+  $('buildCity').disabled = !inPlay || S.mode==='moveRobber';
+  $('bankTradeBtn').disabled = !inPlay || S.mode==='moveRobber';
+  $('offerTradeBtn').disabled = !inPlay || S.mode==='moveRobber';
+}
+function setBuildMode(m){
+  if(S.phase!=='play') return;
+  S.mode = (S.mode===m)? null : m;
+  const hints={
+    buildRoad:'Tap a highlighted edge to build a road (1🧱 1🪵).',
+    buildSettlement:'Tap a highlighted spot to build a settlement (1🧱 1🪵 1🐑 1🌾).',
+    buildCity:'Tap one of your settlements to upgrade it to a city (2🌾 3⛰️).',
+  };
+  setHint(S.mode? hints[S.mode] : 'Build, trade, or end your turn.');
+  refresh();
+}
+
+/* ================= Trading ================= */
+function bankTradeUI(){
+  const p=cur();
+  const givables=RES.filter(r=>p.res[r]>=4);
+  if(!givables.length){ setHint('You need 4 of a kind to trade with the bank.'); return; }
+  const ov=overlay(`<h2>🔄 Bank Trade (4:1)</h2>
+    <div class="tradeRow"><span>Give 4:</span><select id="tGive">${givables.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]} (${p.res[r]})</option>`).join('')}</select></div>
+    <div class="tradeRow"><span>Get 1:</span><select id="tGet">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="btnrow"><button class="btn primary" id="tGo">Trade</button><button class="btn" id="tCancel">Cancel</button></div>`);
+  ov.querySelector('#tCancel').onclick=closeOverlay;
+  ov.querySelector('#tGo').onclick=()=>{
+    const g=ov.querySelector('#tGive').value, w=ov.querySelector('#tGet').value;
+    if(g===w||p.res[g]<4){ closeOverlay(); return; }
+    p.res[g]-=4; p.res[w]++;
+    log(`🔄 ${p.name} traded 4${RES_ICON[g]} for 1${RES_ICON[w]} with the bank.`);
+    closeOverlay(); refresh();
+  };
+}
+function offerTradeUI(){
+  const p=cur();
+  const ov=overlay(`<h2>🤝 Trade Offer — ${escapeHtml(p.name)}</h2>
+    <div class="tradeRow"><span>I give:</span><select id="oGiveN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
+    <select id="oGive">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="tradeRow"><span>I want:</span><select id="oWantN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
+    <select id="oWant">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="btnrow"><button class="btn primary" id="oPost">Post Offer</button><button class="btn" id="oCancel">Cancel</button></div>`);
+  ov.querySelector('#oCancel').onclick=closeOverlay;
+  ov.querySelector('#oPost').onclick=()=>{
+    const gn=+ov.querySelector('#oGiveN').value, gr=ov.querySelector('#oGive').value;
+    const wn=+ov.querySelector('#oWantN').value, wr=ov.querySelector('#oWant').value;
+    if(gr===wr||p.res[gr]<gn){ setHint('Invalid offer.'); closeOverlay(); return; }
+    closeOverlay();
+    const others=S.players.map((q,i)=>i).filter(i=>i!==S.turn && S.players[i].res[wr]>=wn);
+    if(!others.length){ setHint('No one can accept that offer right now.'); return; }
+    const ov2=overlay(`<h2>🤝 ${escapeHtml(p.name)} offers ${gn}${RES_ICON[gr]} for ${wn}${RES_ICON[wr]}</h2>
+      <p>Who accepts?</p>`+
+      others.map(i=>`<button class="btn victimBtn" data-i="${i}">${escapeHtml(S.players[i].name)} — Accept</button>`).join('')+
+      `<button class="btn" id="oDecline">No Deal</button>`);
+    ov2.querySelector('#oDecline').onclick=()=>{ closeOverlay(); log(`🤝 ${p.name}'s offer was declined.`); refresh(); };
+    ov2.addEventListener('click',e=>{
+      const b=e.target.closest('button[data-i]'); if(!b) return;
+      const i=+b.dataset.i, q=S.players[i];
+      p.res[gr]-=gn; q.res[gr]+=gn; q.res[wr]-=wn; p.res[wr]+=wn;
+      log(`🤝 ${p.name} traded ${gn}${RES_ICON[gr]} for ${wn}${RES_ICON[wr]} with ${q.name}.`);
+      closeOverlay(); refresh();
+    });
+  };
+}
+
+/* ================= Turn flow ================= */
+function endTurn(){
+  if(S.phase!=='play'||!S.rolled) return;
+  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null;
+  log(`➡️ ${cur().name}'s turn.`);
+  showPassDevice(); refresh();
+}
+function showPassDevice(){
+  if(S.phase==='gameover') return;
+  const p=cur();
+  const ov=overlay(`<h2 style="color:${p.color==='#f5f5f5'?'#333':p.color}">📱 Pass to ${escapeHtml(p.name)}</h2>
+    <p>Hand the device over, then tap below.</p>
+    <div class="btnrow"><button class="btn primary" id="passOk" style="font-size:1.1rem;padding:14px;">I'm ${escapeHtml(p.name)} — start my turn</button></div>`);
+  ov.querySelector('#passOk').onclick=()=>{
+    closeOverlay();
+    if(S.phase==='setup') setHint(`${p.name}: tap a highlighted spot for your settlement.`);
+    else setHint(`${p.name}: roll the dice!`);
+    refresh();
+  };
+}
+
+/* ================= Overlays ================= */
+function overlay(html){
+  const root=$('overlayRoot');
+  const ov=document.createElement('div'); ov.className='overlay';
+  ov.innerHTML=`<div class="card">${html}</div>`;
+  root.appendChild(ov); return ov;
+}
+function closeOverlay(){ $('overlayRoot').innerHTML=''; }
+function showWin(){
+  const p=S.players[S.winner];
+  overlay(`<div id="winConfetti">🎉🏆🎉</div>
+    <h2 style="text-align:center">${escapeHtml(p.name)} wins!</h2>
+    <p style="text-align:center">${vp(p)} victory points</p>
+    <div class="btnrow" style="justify-content:center"><button class="btn primary" id="againBtn">🔄 Play Again</button></div>`);
+  document.getElementById('againBtn').onclick=()=>{ closeOverlay(); showStart(); };
+}
+function showRules(){
+  overlay(`<h2>❓ How to Play (Family Rules)</h2>
+  <ul class="rulesList">
+    <li>🎲 <b>Roll the dice</b> each turn. Hexes showing that number produce resources for adjacent settlements (1 card) and cities (2 cards). The robber blocks its hex.</li>
+    <li>🏠 <b>Build:</b> Road = 1🧱 1🪵 · Settlement = 1🧱 1🪵 1🐑 1🌾 · City (upgrade) = 2🌾 3⛰️.</li>
+    <li>🔄 <b>Trade</b> 4:1 with the bank, or make offers to other players.</li>
+    <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
+    <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
+    <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
+    <li>📱 This is <b>pass-and-play</b> — one device, pass it around. No internet needed!</li>
+  </ul>
+  <div class="btnrow"><button class="btn primary" id="rulesOk">Got it!</button></div>`)
+  .querySelector('#rulesOk').onclick=closeOverlay;
+}
+function showStart(){
+  const ov=overlay(`<h2>🏝️ Family Catan</h2>
+    <p>Pass-and-play for 2–4 players on one device. No internet needed!</p>
+    <label><b>Number of players:</b></label>
+    <div class="btnrow" id="npick">
+      <button class="btn" data-n="2">2</button>
+      <button class="btn" data-n="3">3</button>
+      <button class="btn primary" data-n="4">4</button>
+    </div>
+    <div id="nameFields"></div>
+    <div class="btnrow"><button class="btn primary" id="startGo" style="font-size:1.1rem">▶ Start Game</button></div>`);
+  let n=4;
+  const renderNames=()=>{
+    const nf=ov.querySelector('#nameFields'); nf.innerHTML='';
+    for(let i=0;i<n;i++){
+      nf.innerHTML+=`<div class="pcolor-pick"><span class="dot" style="background:${PLAYER_COLORS[i].color}"></span><input type="text" id="pname${i}" placeholder="Player ${i+1} name" maxlength="12"></div>`;
+    }
+  };
+  renderNames();
+  ov.querySelector('#npick').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    n=+b.dataset.n;
+    [...ov.querySelectorAll('#npick .btn')].forEach(x=>x.classList.remove('primary'));
+    b.classList.add('primary'); renderNames();
+  });
+  ov.querySelector('#startGo').onclick=()=>{
+    const names=[];
+    for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
+    closeOverlay();
+    newGame(names);
+    S.turn=S.setupQueue[0]; S.mode='setupSettlement';
+    setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
+    refresh();
+  };
+}
+
+/* ================= Boot ================= */
+function boot(){
+  $('rollBtn').onclick=rollDice;
+  $('endTurnBtn').onclick=endTurn;
+  $('buildRoad').onclick=()=>setBuildMode('buildRoad');
+  $('buildSettle').onclick=()=>setBuildMode('buildSettlement');
+  $('buildCity').onclick=()=>setBuildMode('buildCity');
+  $('bankTradeBtn').onclick=bankTradeUI;
+  $('offerTradeBtn').onclick=offerTradeUI;
+  $('rulesBtn').onclick=showRules;
+  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) showStart(); };
+  showStart();
+}
+if(typeof document!=='undefined'){ boot(); }
+</script>
+</body>
+</html>
