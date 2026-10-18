@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Family Catan</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap");
   :root {
@@ -35,6 +36,10 @@
     border: 1px solid #e8dcc0;
   }
   header h1 { margin: 0; font-size: 1.4rem; letter-spacing: .5px; }
+  #netStatus { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 700; }
+  #netDot { width: 12px; height: 12px; border-radius: 50%; background: #999; }
+  #netDot.on { background: #27ae60; box-shadow: 0 0 6px #27ae60; }
+  #netDot.off { background: #e74c3c; }
   #standings { display: flex; gap: 8px; flex-wrap: wrap; }
   .pchip {
     display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px;
@@ -43,6 +48,8 @@
   }
   .pchip .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #999; }
   .pchip.active { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,.2); }
+  .pchip.dc { opacity: .45; }
+  .pchip.me { border-style: dashed; }
   #turnBanner {
     background: linear-gradient(180deg, #fffdf6, var(--panel));
     border-radius: 16px; padding: 10px 16px; font-weight: 700; font-size: 1.05rem;
@@ -50,7 +57,7 @@
     box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 #fff;
     border: 1px solid #e8dcc0;
   }
-  #turnBanner .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; box-shadow: 0 0 8px currentColor; }
+  #turnBanner .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; }
   #main { display: flex; gap: 10px; align-items: stretch; }
   #boardWrap {
     flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
@@ -87,7 +94,7 @@
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
-  #dice { font-size: 2.4rem; transition: transform .1s; }
+  #dice { font-size: 2.4rem; }
   #dice.rolling { animation: shake .35s ease; }
   @keyframes shake {
     0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
@@ -108,7 +115,6 @@
   }
   #log div { padding: 3px 0; border-bottom: 1px dotted #e8dcc0; }
   .hint { font-size: .88rem; background: #fff8e1; border: 1px solid var(--gold); border-radius: 10px; padding: 9px 10px; }
-  /* SVG board */
   .hex { cursor: default; }
   .hex.robber-ok { cursor: pointer; }
   .hex.robber-ok polygon { stroke: var(--gold); stroke-width: 4; }
@@ -118,7 +124,6 @@
   .espot:hover { stroke: var(--gold); }
   .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
   .settlement, .city { pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
-  /* overlays */
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50;
     display: flex; align-items: center; justify-content: center; padding: 16px;
@@ -132,7 +137,7 @@
   }
   .card h2 { margin-top: 0; }
   .card input[type=text] {
-    width: 100%; padding: 10px; margin: 6px 0; border-radius: 10px; border: 2px solid #d8cba4; font-size: 1rem;
+    width: 100%; padding: 12px; margin: 6px 0; border-radius: 10px; border: 2px solid #d8cba4; font-size: 1rem;
     background: #fff;
   }
   .card .btnrow { margin-top: 12px; }
@@ -144,23 +149,39 @@
   #winConfetti { font-size: 3rem; text-align: center; }
   .rulesList { font-size: .9rem; line-height: 1.5; }
   .rulesList li { margin-bottom: 6px; }
+  .roomCode {
+    font-size: 2.6rem; font-weight: 800; letter-spacing: 12px; text-align: center;
+    background: #fff; border: 3px dashed var(--gold); border-radius: 14px; padding: 10px;
+    margin: 10px 0; font-family: "Baloo 2", sans-serif;
+  }
+  .lobbyPlayer {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff;
+    border-radius: 10px; margin: 6px 0; font-weight: 700; border: 2px solid #e0d5b5;
+  }
+  .lobbyPlayer .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; }
+  .offerBanner {
+    background: #e8f5e9; border: 2px solid #27ae60; border-radius: 10px; padding: 10px;
+    font-size: .88rem; font-weight: 600;
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>🏝️ Family Catan</h1>
+    <div id="netStatus"><span id="netDot"></span><span id="netText">offline</span></div>
     <div id="standings"></div>
     <div class="btnrow">
       <button class="btn" id="rulesBtn">❓ Rules</button>
       <button class="btn" id="newGameBtn">🔄 New Game</button>
     </div>
   </header>
-  <div id="turnBanner"><span class="dot" id="turnDot"></span><span id="turnText">Set up a new game</span></div>
+  <div id="turnBanner"><span class="dot" id="turnDot"></span><span id="turnText">Welcome to Family Catan</span></div>
   <div id="main">
     <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg></div>
     <div id="panel">
-      <div class="hint" id="hint">Welcome! Tap 🔄 New Game to start.</div>
+      <div class="hint" id="hint">Tap 🔄 New Game to start.</div>
+      <div id="offerBox"></div>
       <div id="diceArea">
         <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
         <div id="dice">🎲🎲</div>
@@ -183,8 +204,7 @@
 <div id="overlayRoot"></div>
 <script>
 'use strict';
-
-/* ================= Constants & geometry ================= */
+/* ================= Constants & geometry (tested) ================= */
 const HEX_SIZE = 60;
 const RES = ['wood','brick','sheep','wheat','ore'];
 const RES_ICON = { wood:'🪵', brick:'🧱', sheep:'🐑', wheat:'🌾', ore:'⛰️' };
@@ -209,6 +229,7 @@ const PLAYER_COLORS = [
   { name:'White',  color:'#f5f5f5' },
 ];
 const WIN_VP = 10;
+const PEER_PREFIX = 'familycatan-v1-';
 
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function vKey(x,y){ return Math.round(x)+','+Math.round(y); }
@@ -219,8 +240,10 @@ function hexCorners(cx,cy){
   for(let i=0;i<6;i++){ const a=Math.PI/180*(60*i-30); p.push({x:cx+HEX_SIZE*Math.cos(a), y:cy+HEX_SIZE*Math.sin(a)}); }
   return p;
 }
+function makeCode(){ const c='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-/* ================= Board data ================= */
+/* ================= Board data (tested) ================= */
 function buildBoardData(){
   const rows=[{r:0,qs:[0,1,2]},{r:1,qs:[-1,0,1,2]},{r:2,qs:[-2,-1,0,1,2]},{r:3,qs:[-2,-1,0,1]},{r:4,qs:[-2,-1,0]}];
   const terrains=shuffle(['wood','wood','wood','wood','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','ore','ore','ore','desert']);
@@ -251,26 +274,26 @@ function buildBoardData(){
 }
 
 /* ================= Game state ================= */
-let S=null; // state
+let S=null;
 function newGame(playerNames){
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
     players: playerNames.map((n,i)=>({
-      name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color, colorName:PLAYER_COLORS[i].name,
+      name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0},
-      longest:0, hasLongest:false,
+      longest:0, hasLongest:false, dc:false,
     })),
     turn:0, phase:'setup', dice:[1,1], rolled:false,
-    setupQueue:[], setupIdx:0, setupSub:'settlement', // 'settlement' then 'road'
-    mode:null, // buildRoad | buildSettlement | buildCity | moveRobber
-    discardQueue:[], stealVictims:[],
+    setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
+    mode:null, discardQueue:[], pending:null, offer:null,
     log:[], winner:-1,
   };
   const n=S.players.length;
   for(let i=0;i<n;i++) S.setupQueue.push(i);
   for(let i=n-1;i>=0;i--) S.setupQueue.push(i);
-  log('Game started! '+n+' players. Place your first settlement + road.');
+  S.turn=S.setupQueue[0]; S.mode='setupSettlement';
+  addLog('Game started! '+n+' players. Place your first settlement + road.');
 }
 function cur(){ return S.players[S.turn]; }
 function totalCards(p){ return RES.reduce((s,r)=>s+p.res[r],0); }
@@ -284,282 +307,404 @@ function vp(p){
 function canAfford(p,cost){ return Object.keys(cost).every(r=>p.res[r]>=cost[r]); }
 function payCost(p,cost){ Object.keys(cost).forEach(r=>{ p.res[r]-=cost[r]; }); }
 function giveRes(p,res,n){ p.res[res]+=n; }
-function log(msg){
+function addLog(msg){
   S.log.unshift(msg);
   if(S.log.length>40) S.log.pop();
   if(typeof document!=='undefined') renderLog();
 }
 
-/* ================= Rendering ================= */
-const svgNS='http://www.w3.org/2000/svg';
-const $=id=>document.getElementById(id);
-function el(tag,attrs,parent){ const e=document.createElementNS(svgNS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e; }
+/* ================= Network layer ================= */
+const NET = {
+  mode:null,        // 'local' | 'online'
+  isHost:false,
+  myIdx:0,          // my player index (online)
+  myName:'',
+  code:null,
+  peer:null,
+  conns:{},         // host: idx -> connection
+  hostConn:null,    // guest: connection to host
+  lobbyPlayers:[],  // [{name,color}]
+  started:false,
+};
+function isLocalPlayer(i){ return NET.mode==='local' || (NET.isHost && i===NET.myIdx); }
+function canActAs(i){ return NET.mode==='local' || i===NET.myIdx; }
+function myTurn(){ return S && S.turn===NET.myIdx; }
+function setNetStatus(txt, cls){ const d=$('netDot'), t=$('netText'); if(d){d.className=cls||'';} if(t){t.textContent=txt;} }
 
-function renderBoard(){
-  const svg=$('board'); svg.innerHTML='';
-  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
-  S.hexes.forEach(h=>{
-    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
-    corners.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
-  });
-  const pad=70;
-  svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
-  const g=el('g',{},svg);
-  // hexes
-  S.hexes.forEach(h=>{
-    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
-    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
-    hg.addEventListener('click',()=>onHexClick(h.id));
-    el('polygon',{points:corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' '), fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
-    const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
-    t.textContent=TERRAIN[h.terrain].icon;
-    if(h.number!==null){
-      const hot=(h.number===6||h.number===8);
-      el('circle',{cx:c.x, cy:c.y+22, r:17, fill:'#f7f3e8', stroke:'#555','stroke-width':1.5},hg);
-      const nt=el('text',{x:c.x, y:c.y+29, 'text-anchor':'middle','font-size':'20','font-weight':'bold', fill:hot?'#c0392b':'#222'},hg);
-      nt.textContent=h.number;
-      const dots='•'.repeat(h.number<=7? h.number-1 : 13-h.number);
-      const dt=el('text',{x:c.x, y:c.y+42, 'text-anchor':'middle','font-size':'10', fill:hot?'#c0392b':'#222'},hg);
-      dt.textContent=dots;
-    }
-    if(h.id===S.robberHex){
-      const rt=el('text',{x:c.x, y:c.y+4, 'text-anchor':'middle','font-size':'34'},hg);
-      rt.textContent='🕵️';
-    }
-  });
-  // roads
-  for(const ek in S.edges){
-    const e=S.edges[ek];
-    if(e.owner>=0){
-      const a=S.vertices[e.a], b=S.vertices[e.b];
-      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':8},g);
-      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:'rgba(0,0,0,.25)','stroke-width':8,'stroke-dasharray':'2 10'},g);
-    }
+function netSync(){
+  if(NET.mode!=='online'||!NET.isHost) return;
+  const msg={t:'state', s:S};
+  for(const idx in NET.conns){
+    try{ NET.conns[idx].send(msg); }catch(e){}
   }
-  // clickable edge spots (build modes)
-  if(S.mode==='buildRoad'||S.mode==='setupRoad'){
-    for(const ek in S.edges){
-      const e=S.edges[ek];
-      if(e.owner===-1 && edgeValid(e)){
-        const a=S.vertices[e.a], b=S.vertices[e.b];
-        const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'espot'},g);
-        l.addEventListener('click',ev=>{ev.stopPropagation(); onEdgeClick(ek);});
+}
+function netSend(msg){
+  if(NET.hostConn && NET.hostConn.open){ NET.hostConn.send(msg); }
+}
+function serializeState(){ return JSON.parse(JSON.stringify(S)); }
+
+/* ---- Host: create room ---- */
+function hostRoom(name){
+  return new Promise((resolve,reject)=>{
+    if(typeof Peer==='undefined'){ reject(new Error('network lib failed to load')); return; }
+    const code=makeCode();
+    const peer=new Peer(PEER_PREFIX+code, {debug:0});
+    NET.peer=peer; NET.code=code; NET.isHost=true; NET.myIdx=0; NET.myName=name;
+    NET.lobbyPlayers=[{name:name, color:PLAYER_COLORS[0].color}];
+    peer.on('open',()=>{ setNetStatus('room '+code,'on'); resolve(code); });
+    peer.on('error',e=>{ reject(e); });
+    peer.on('connection',conn=>{
+      conn.on('data',data=>hostOnData(conn,data));
+      conn.on('close',()=>hostOnClose(conn));
+      conn.on('open',()=>{ conn._name=null; });
+    });
+  });
+}
+function hostOnData(conn,data){
+  if(data.t==='join'||data.t==='rejoin'){
+    let name=String(data.name||'Player').slice(0,12)||'Player';
+    let idx=NET.lobbyPlayers.findIndex(p=>p.name===name);
+    if(data.t==='rejoin' && idx>=0){
+      // rejoining existing player
+      NET.conns[idx]=conn; conn._idx=idx;
+      S.players[idx].dc=false;
+      conn.send({t:'welcome', idx:idx, code:NET.code, rejoin:true});
+      conn.send({t:'state', s:serializeState()});
+      addLog('🔌 '+name+' reconnected.');
+      netSync(); broadcastLobby();
+      return;
+    }
+    if(NET.started){ conn.send({t:'denied', reason:'game already started'}); setTimeout(()=>conn.close(),500); return; }
+    if(idx>=0){ name=name+' '+(Object.keys(NET.conns).length+1); }
+    idx=NET.lobbyPlayers.length;
+    if(idx>=4){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
+    NET.lobbyPlayers.push({name:name, color:PLAYER_COLORS[idx].color});
+    NET.conns[idx]=conn; conn._idx=idx; conn._name=name;
+    conn.send({t:'welcome', idx:idx, code:NET.code});
+    broadcastLobby();
+  }
+  else if(data.t==='act'){
+    const idx=conn._idx;
+    if(idx===undefined) return;
+    hostApplyAct(idx, data.a);
+  }
+}
+function hostOnClose(conn){
+  const idx=conn._idx;
+  if(idx===undefined||idx===0) return;
+  delete NET.conns[idx];
+  if(S && NET.started){
+    S.players[idx].dc=true;
+    addLog('⚠️ '+S.players[idx].name+' disconnected. They can rejoin with the room code.');
+    netSync();
+  }
+  broadcastLobby();
+}
+function broadcastLobby(){
+  const msg={t:'lobby', players:NET.lobbyPlayers, code:NET.code};
+  for(const idx in NET.conns){ try{ NET.conns[idx].send(msg); }catch(e){} }
+  renderLobby();
+}
+
+/* ---- Guest: join room ---- */
+function joinRoom(code,name){
+  return new Promise((resolve,reject)=>{
+    if(typeof Peer==='undefined'){ reject(new Error('network lib failed to load')); return; }
+    code=code.trim().toUpperCase();
+    const peer=new Peer({debug:0});
+    NET.peer=peer; NET.isHost=false; NET.myName=name;
+    peer.on('open',()=>{
+      const conn=peer.connect(PEER_PREFIX+code, {reliable:true});
+      NET.hostConn=conn;
+      conn.on('open',()=>{ conn.send({t:'join', name:name}); });
+      conn.on('data',data=>guestOnData(data,resolve,reject,code));
+      conn.on('close',()=>guestOnHostClose());
+      conn.on('error',()=>{});
+    });
+    peer.on('error',e=>{
+      if(e.type==='peer-unavailable') reject(new Error('room not found — check the code'));
+      else reject(e);
+    });
+  });
+}
+function guestOnData(data,resolve,reject,code){
+  if(data.t==='welcome'){
+    NET.myIdx=data.idx; NET.code=data.code||code;
+    NET.mode='online';
+    setNetStatus('room '+NET.code,'on');
+    resolve(data);
+  }
+  else if(data.t==='denied'){ reject(new Error(data.reason)); }
+  else if(data.t==='lobby'){ NET.lobbyPlayers=data.players; renderLobby(); }
+  else if(data.t==='state'){ onRemoteState(data.s); }
+  else if(data.t==='end'){ showEnded(data.reason); }
+}
+function guestOnHostClose(){
+  if(NET.mode==='online'&&!NET.isHost){
+    setNetStatus('disconnected','off');
+    showEnded('The host left the game.');
+  }
+}
+function onRemoteState(s){
+  const wasPhase=S&&S.phase;
+  S=s;
+  NET.started=true;
+  closeLobbyIfOpen();
+  refresh();
+  renderPrompts();
+}
+function showEnded(reason){
+  overlay(`<h2>🔌 Game Over</h2><p>${escapeHtml(reason)}</p>
+    <div class="btnrow"><button class="btn primary" id="endOk">OK</button></div>`)
+    .querySelector('#endOk').onclick=()=>{ closeOverlay(); location.reload(); };
+}
+
+/* ================= Host action dispatcher ================= */
+function hostApplyAct(idx,a){
+  if(!S||S.phase==='gameover') return;
+  const changed=applyAct(idx,a);
+  if(changed){ afterChange(); }
+}
+function applyAct(idx,a){
+  // returns true if state changed
+  const p=S.players[idx];
+  switch(a.kind){
+    case 'roll':
+      if(S.phase!=='play'||S.rolled||S.turn!==idx) return false;
+      doRoll(); return true;
+    case 'endTurn':
+      if(S.phase!=='play'||!S.rolled||S.turn!==idx) return false;
+      doEndTurn(); return true;
+    case 'setupSettlement':{
+      if(S.phase!=='setup'||S.turn!==idx||S.setupSub!=='settlement') return false;
+      const v=S.vertices[a.key];
+      if(!v||!setupVertexValid(v,idx)) return false;
+      v.owner=idx; v.kind='settlement'; S.setupVertex=a.key; S.setupSub='road'; S.mode='setupRoad';
+      addLog(`🏠 ${p.name} placed a settlement.`);
+      return true;
+    }
+    case 'setupRoad':{
+      if(S.phase!=='setup'||S.turn!==idx||S.setupSub!=='road') return false;
+      const e=S.edges[a.key];
+      if(!e||e.owner!==-1) return false;
+      if(!(e.a===S.setupVertex||e.b===S.setupVertex)) return false;
+      e.owner=idx;
+      addLog(`🛣️ ${p.name} placed a road.`);
+      const round2=S.setupIdx>=S.players.length;
+      if(round2){
+        const v=S.vertices[S.setupVertex];
+        v.hexes.forEach(hid=>{ const h=S.hexes[hid], res=TERRAIN[h.terrain].res; if(res) giveRes(p,res,1); });
+        addLog(`🎁 ${p.name} collects starting resources.`);
       }
-    }
-  }
-  // settlements & cities
-  for(const k in S.vertices){
-    const v=S.vertices[k];
-    if(v.owner>=0){
-      const col=S.players[v.owner].color;
-      if(v.kind==='city'){
-        el('circle',{cx:v.x,cy:v.y,r:15,fill:col,stroke:'#222','stroke-width':2.5,class:'city'},g);
-        el('circle',{cx:v.x,cy:v.y,r:7,fill:'none',stroke:'#fff','stroke-width':2.5,class:'city'},g);
+      S.setupIdx++; S.setupVertex=null;
+      if(S.setupIdx>=S.setupQueue.length){
+        S.phase='play'; S.turn=S.setupQueue[0]; S.rolled=false; S.mode=null;
+        addLog('Setup done! Game begins.');
       }else{
-        el('circle',{cx:v.x,cy:v.y,r:11,fill:col,stroke:'#222','stroke-width':2.5,class:'settlement'},g);
+        S.turn=S.setupQueue[S.setupIdx]; S.setupSub='settlement'; S.mode='setupSettlement';
       }
+      return true;
     }
-  }
-  // clickable vertex spots
-  if(S.mode==='buildSettlement'||S.mode==='buildCity'||S.mode==='setupSettlement'){
-    for(const k in S.vertices){
-      const v=S.vertices[k];
-      if(vertexValid(v)){
-        const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
-        c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexClick(k);});
-      }
+    case 'place':{
+      if(S.phase!=='play'||S.turn!==idx) return false;
+      if(a.what==='road'){
+        const e=S.edges[a.key];
+        if(!e||!canAfford(p,COSTS.road)||!roadValid(e,idx)) return false;
+        payCost(p,COSTS.road); e.owner=idx;
+        addLog(`🛣️ ${p.name} built a road.`);
+      }else if(a.what==='settlement'){
+        const v=S.vertices[a.key];
+        if(!v||!canAfford(p,COSTS.settlement)||!settleValid(v,idx)) return false;
+        payCost(p,COSTS.settlement); v.owner=idx; v.kind='settlement';
+        addLog(`🏠 ${p.name} built a settlement.`);
+      }else if(a.what==='city'){
+        const v=S.vertices[a.key];
+        if(!v||v.owner!==idx||v.kind!=='settlement'||!canAfford(p,COSTS.city)) return false;
+        payCost(p,COSTS.city); v.kind='city';
+        addLog(`🏘️ ${p.name} built a city.`);
+      }else return false;
+      S.mode=null;
+      updateLongest(); checkWin();
+      return true;
     }
-  }
-}
-
-function renderStandings(){
-  const d=$('standings'); d.innerHTML='';
-  S.players.forEach((p,i)=>{
-    const c=document.createElement('div');
-    c.className='pchip'+(i===S.turn&&S.phase!=='gameover'?' active':'');
-    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}`;
-    d.appendChild(c);
-  });
-}
-function renderRes(){
-  const p=cur(), bar=$('resBar'); bar.innerHTML='';
-  $('resTitle').textContent='Resources — '+p.name+' ('+totalCards(p)+' cards)';
-  RES.forEach(r=>{
-    const d=document.createElement('div'); d.className='res';
-    d.innerHTML=`${RES_ICON[r]} ${p.res[r]}<small>${RES_NAME[r]}</small>`;
-    bar.appendChild(d);
-  });
-}
-function renderLog(){
-  const d=$('log'); if(!d) return; d.innerHTML='';
-  S.log.forEach(m=>{ const x=document.createElement('div'); x.textContent=m; d.appendChild(x); });
-}
-function setHint(t){ $('hint').innerHTML=t; }
-function refresh(){
-  renderBoard(); renderStandings(); renderRes(); renderLog();
-  const p=S.players[S.turn];
-  $('turnDot').style.background=p.color;
-  if(S.phase==='gameover'){ $('turnText').textContent='🏆 '+S.players[S.winner].name+' wins!'; }
-  else if(S.phase==='setup'){ $('turnText').textContent=p.name+' — setup: place '+(S.setupSub==='settlement'?'a settlement':'a road'); }
-  else { $('turnText').textContent=p.name+"'s turn"; }
-  $('rollBtn').disabled = S.phase!=='play' || S.rolled;
-  $('endTurnBtn').disabled = S.phase!=='play' || !S.rolled;
-  updateBuildButtons();
-}
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-/* ================= Placement validity ================= */
-function vertexValid(v){
-  const i=S.turn;
-  if(S.mode==='buildCity') return v.owner===i && v.kind==='settlement';
-  if(v.owner!==-1) return false;
-  for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; } // distance rule
-  if(S.mode==='setupSettlement') return true;
-  if(S.mode==='buildSettlement'){
-    // must touch own road
-    for(const nb of v.neighbors){ if(S.edges[edgeKey(v.key,nb)].owner===i) return true; }
-    return false;
+    case 'bankTrade':{
+      if(S.phase!=='play'||S.turn!==idx||a.give===a.get) return false;
+      if(p.res[a.give]<4||!RES.includes(a.give)||!RES.includes(a.get)) return false;
+      p.res[a.give]-=4; p.res[a.get]++;
+      addLog(`🔄 ${p.name} traded 4${RES_ICON[a.give]} for 1${RES_ICON[a.get]} with the bank.`);
+      return true;
+    }
+    case 'offer':{
+      if(S.phase!=='play'||S.turn!==idx||S.offer) return false;
+      if(a.giveR===a.wantR||p.res[a.giveR]<a.giveN) return false;
+      S.offer={from:idx, giveN:a.giveN, giveR:a.giveR, wantN:a.wantN, wantR:a.wantR};
+      addLog(`🤝 ${p.name} offers ${a.giveN}${RES_ICON[a.giveR]} for ${a.wantN}${RES_ICON[a.wantR]}.`);
+      return true;
+    }
+    case 'acceptOffer':{
+      if(!S.offer||S.offer.from===idx) return false;
+      const o=S.offer, from=S.players[o.from];
+      if(p.res[o.wantR]<o.wantN||from.res[o.giveR]<o.giveN) return false;
+      from.res[o.giveR]-=o.giveN; p.res[o.giveR]+=o.giveN;
+      p.res[o.wantR]-=o.wantN; from.res[o.wantR]+=o.wantN;
+      addLog(`🤝 ${from.name} traded ${o.giveN}${RES_ICON[o.giveR]} for ${o.wantN}${RES_ICON[o.wantR]} with ${p.name}.`);
+      S.offer=null;
+      return true;
+    }
+    case 'declineOffer':{
+      if(!S.offer) return false;
+      addLog(`🤝 ${S.players[S.offer.from].name}'s offer was declined.`);
+      S.offer=null; return true;
+    }
+    case 'moveRobber':{
+      if(S.mode!=='moveRobber'||a.hex===S.robberHex) return false;
+      // only current player moves robber
+      doMoveRobber(a.hex);
+      return true;
+    }
+    case 'steal':{
+      if(!S.pending||S.pending.kind!=='steal'||S.pending.chooser!==idx) return false;
+      if(!S.pending.victims.includes(a.victim)) return false;
+      doSteal(a.victim);
+      return true;
+    }
+    case 'discard':{
+      if(!S.pending||S.pending.kind!=='discard'||S.pending.player!==idx) return false;
+      const cards=a.cards; let sum=0;
+      for(const r of RES){ const n=cards[r]||0; if(n<0||n>p.res[r]) return false; sum+=n; }
+      if(sum!==S.pending.must) return false;
+      for(const r of RES) p.res[r]-=(cards[r]||0);
+      addLog(`🕵️ ${p.name} discarded ${S.pending.must} cards.`);
+      S.discardQueue.shift(); S.pending=null;
+      processDiscard();
+      return true;
+    }
   }
   return false;
 }
-function edgeValid(e){
+function afterChange(){
+  updateLongest(); checkWin();
+  if(NET.mode==='online'&&NET.isHost){ netSync(); }
+  refresh(); renderPrompts();
+}
+
+/* ================= Placement validity (host-side) ================= */
+function setupVertexValid(v,idx){
+  if(v.owner!==-1) return false;
+  for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
+  return true;
+}
+function roadValid(e,idx){
   if(e.owner!==-1) return false;
-  const i=S.turn;
   const a=S.vertices[e.a], b=S.vertices[e.b];
-  if(S.mode==='setupRoad'){
-    // must touch the settlement just placed (tracked in S.setupVertex)
-    return e.a===S.setupVertex || e.b===S.setupVertex;
-  }
-  if(a.owner===i || b.owner===i) return true;
+  if(a.owner===idx||b.owner===idx) return true;
   for(const ek in S.edges){
     const o=S.edges[ek];
-    if(o.owner===i && (o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+    if(o.owner===idx&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
   }
   return false;
 }
+function settleValid(v,idx){
+  if(v.owner!==-1) return false;
+  for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
+  for(const nb of v.neighbors){ if(S.edges[edgeKey(v.key,nb)].owner===idx) return true; }
+  return false;
+}
+// UI-side validity (uses current S.turn / S.mode for highlight)
+function vertexValidUI(v){
+  const i=S.turn, em=effMode();
+  if(S.mode==='setupSettlement') return setupVertexValid(v,i);
+  if(em==='buildCity') return v.owner===i&&v.kind==='settlement';
+  if(v.owner!==-1) return false;
+  for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
+  if(em==='buildSettlement') return settleValid(v,i);
+  return false;
+}
+function edgeValidUI(e){
+  const i=S.turn;
+  if(e.owner!==-1) return false;
+  if(S.mode==='setupRoad') return e.a===S.setupVertex||e.b===S.setupVertex;
+  if(effMode()!=='buildRoad') return false;
+  return roadValid(e,i);
+}
 
-/* ================= Dice & production ================= */
-function rollDice(){
-  if(S.phase!=='play'||S.rolled) return;
+/* ================= Dice & production (host-side) ================= */
+function doRoll(){
   S.rolled=true;
   const d1=1+Math.floor(Math.random()*6), d2=1+Math.floor(Math.random()*6);
   S.dice=[d1,d2];
   const sum=d1+d2;
-  const faces='⚀⚁⚂⚃⚄⚅', diceEl=$('dice');
-  diceEl.classList.add('rolling');
-  let ticks=0;
-  const iv=setInterval(()=>{
-    diceEl.textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
-    if(++ticks>=4){ clearInterval(iv); diceEl.textContent=faces[d1-1]+faces[d2-1]; diceEl.classList.remove('rolling'); }
-  },90);
-  if(sum===7){ log(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
-  else{
-    log(`🎲 ${cur().name} rolled ${sum}`);
-    distribute(sum);
-  }
-  refresh();
+  animateDice(d1,d2);
+  if(sum===7){ addLog(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
+  else{ addLog(`🎲 ${cur().name} rolled ${sum}`); distribute(sum); }
 }
 function distribute(sum){
   S.hexes.forEach(h=>{
-    if(h.number!==sum||h.id===S.robberHex||!h.terrain||TERRAIN[h.terrain].res===null) return;
+    if(h.number!==sum||h.id===S.robberHex) return;
     const res=TERRAIN[h.terrain].res;
+    if(!res) return;
     for(const k in S.vertices){
       const v=S.vertices[k];
-      if(v.owner>=0 && v.hexes.includes(h.id)){
-        giveRes(S.players[v.owner],res, v.kind==='city'?2:1);
-      }
+      if(v.owner>=0&&v.hexes.includes(h.id)) giveRes(S.players[v.owner],res,v.kind==='city'?2:1);
     }
   });
 }
 
-/* ================= Robber ================= */
+/* ================= Robber (host-side) ================= */
 function startRobber(){
   S.discardQueue=[];
-  S.players.forEach((p,i)=>{
-    const n=totalCards(p);
-    if(n>7) S.discardQueue.push({player:i, must:Math.floor(n/2)});
-  });
-  if(S.discardQueue.length) showDiscardModal();
-  else { S.mode='moveRobber'; setHint('🕵️ Tap a hex to move the robber.'); }
+  S.players.forEach((p,i)=>{ const n=totalCards(p); if(n>7) S.discardQueue.push({player:i, must:Math.floor(n/2)}); });
+  processDiscard();
 }
-function showDiscardModal(){
-  const dq=S.discardQueue[0], p=S.players[dq.player];
-  const chosen={wood:0,brick:0,sheep:0,wheat:0,ore:0};
-  const ov=overlay(`<h2>🕵️ Robber! ${escapeHtml(p.name)} discards ${dq.must}</h2>
-    <p>You have ${totalCards(p)} cards — tap cards to discard ${dq.must}.</p>
-    <div id="discRes" class="btnrow"></div>
-    <p id="discCount"></p>
-    <div class="btnrow"><button class="btn primary" id="discOk" disabled>Done</button></div>`);
-  const render=()=>{
-    const box=ov.querySelector('#discRes'); box.innerHTML='';
-    let sum=0; for(const r in chosen) sum+=chosen[r];
-    ov.querySelector('#discCount').textContent=`Selected ${sum} / ${dq.must}`;
-    ov.querySelector('#discOk').disabled = sum!==dq.must;
-    RES.forEach(r=>{
-      const b=document.createElement('button'); b.className='btn';
-      b.innerHTML=`${RES_ICON[r]} ${p.res[r]} <b>(-${chosen[r]})</b>`;
-      box.appendChild(b);
-    });
-  };
-  render();
-  ov.querySelector('#discRes').addEventListener('click',e=>{
-    const btn=e.target.closest('button'); if(!btn) return;
-    const idx=[...ov.querySelector('#discRes').children].indexOf(btn);
-    const r=RES[idx]; let sum=0; for(const k in chosen) sum+=chosen[k];
-    if(sum<dq.must && chosen[r]<p.res[r]) chosen[r]++;       // tap to add
-    else if(chosen[r]>0) chosen[r]--;                        // tap again to remove
-    render();
-  });
-  ov.querySelector('#discOk').onclick=()=>{
-    RES.forEach(r=>{ p.res[r]-=chosen[r]; });
-    log(`🕵️ ${p.name} discarded ${dq.must} cards.`);
-    S.discardQueue.shift();
-    closeOverlay();
-    if(S.discardQueue.length) showDiscardModal();
-    else { S.mode='moveRobber'; setHint('🕵️ Tap a hex to move the robber.'); refresh(); }
-  };
+function processDiscard(){
+  if(!S.discardQueue.length){
+    S.pending=null; S.mode='moveRobber';
+    setHint('🕵️ Tap a hex to move the robber.');
+    return;
+  }
+  const dq=S.discardQueue[0];
+  if(isLocalPlayer(dq.player)){ showDiscardModal(dq); }
+  else{
+    S.pending={kind:'discard', player:dq.player, must:dq.must};
+    setHint(`🕵️ Waiting for ${S.players[dq.player].name} to discard ${dq.must} cards…`);
+  }
 }
-function onHexClick(id){
-  if(S.mode!=='moveRobber'||id===S.robberHex) return;
-  S.robberHex=id; S.mode=null;
+function doMoveRobber(hexId){
+  S.robberHex=hexId; S.mode=null;
   const victims=new Set();
   for(const k in S.vertices){
     const v=S.vertices[k];
-    if(v.owner>=0 && v.owner!==S.turn && v.hexes.includes(id) && totalCards(S.players[v.owner])>0) victims.add(v.owner);
+    if(v.owner>=0&&v.owner!==S.turn&&v.hexes.includes(hexId)&&totalCards(S.players[v.owner])>0) victims.add(v.owner);
   }
-  log(`🕵️ ${cur().name} moved the robber.`);
-  if(victims.size===0){ setHint('Robber moved. No one to steal from.'); }
-  else if(victims.size===1){
-    const vi=[...victims][0]; stealFrom(vi);
-  }else{
-    const ov=overlay(`<h2>🕵️ Steal from whom?</h2>`+
-      [...victims].map(vi=>`<button class="btn victimBtn" data-vi="${vi}">Steal from ${escapeHtml(S.players[vi].name)}</button>`).join(''));
-    ov.addEventListener('click',e=>{
-      const b=e.target.closest('button[data-vi]'); if(!b) return;
-      closeOverlay(); stealFrom(parseInt(b.dataset.vi));
-    });
+  addLog(`🕵️ ${cur().name} moved the robber.`);
+  if(victims.size===0){ S.pending=null; setHint('Robber moved. No one to steal from.'); }
+  else if(victims.size===1){ doSteal([...victims][0]); }
+  else{
+    const chooser=S.turn;
+    if(isLocalPlayer(chooser)){ showStealModal([...victims]); }
+    else{
+      S.pending={kind:'steal', chooser:chooser, victims:[...victims]};
+      setHint(`🕵️ Waiting for ${cur().name} to choose who to steal from…`);
+    }
   }
-  refresh();
 }
-function stealFrom(vi){
+function doSteal(vi){
   const victim=S.players[vi], hand=[];
   RES.forEach(r=>{ for(let i=0;i<victim.res[r];i++) hand.push(r); });
+  S.pending=null;
   if(!hand.length){ setHint('No cards to steal.'); return; }
   const r=hand[Math.floor(Math.random()*hand.length)];
   victim.res[r]--; cur().res[r]++;
-  log(`🕵️ ${cur().name} stole 1 ${RES_ICON[r]} from ${victim.name}.`);
+  addLog(`🕵️ ${cur().name} stole 1 ${RES_ICON[r]} from ${victim.name}.`);
   setHint('Robber done. Build, trade, or end your turn.');
 }
 
-/* ================= Longest road ================= */
+/* ================= Longest road & win (host-side) ================= */
 function longestRoadFor(pi){
   const adj={};
   for(const ek in S.edges){
     const e=S.edges[ek];
-    if(e.owner===pi){
-      (adj[e.a]=adj[e.a]||[]).push(e.b);
-      (adj[e.b]=adj[e.b]||[]).push(e.a);
-    }
+    if(e.owner===pi){ (adj[e.a]=adj[e.a]||[]).push(e.b); (adj[e.b]=adj[e.b]||[]).push(e.a); }
   }
   let best=0; const used=new Set();
   function dfs(v,len){
@@ -583,164 +728,105 @@ function updateLongest(){
   });
   S.players.forEach((p,i)=>{
     const had=p.hasLongest;
-    p.hasLongest = (!tie && i===holder);
-    if(p.hasLongest&&!had) log(`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
+    p.hasLongest=(!tie&&i===holder);
+    if(p.hasLongest&&!had) addLog(`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
   });
 }
 function checkWin(){
   for(let i=0;i<S.players.length;i++){
     if(vp(S.players[i])>=WIN_VP){
-      S.phase='gameover'; S.winner=i; S.mode=null;
-      log(`🏆 ${S.players[i].name} wins with ${vp(S.players[i])} VP!`);
-      showWin(); return true;
+      S.phase='gameover'; S.winner=i; S.mode=null; S.pending=null; S.offer=null;
+      addLog(`🏆 ${S.players[i].name} wins with ${vp(S.players[i])} VP!`);
+      return true;
     }
   }
   return false;
 }
+function doEndTurn(){
+  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null;
+  addLog(`➡️ ${cur().name}'s turn.`);
+}
 
-/* ================= Building ================= */
-function onVertexClick(k){
-  const v=S.vertices[k], p=cur(), i=S.turn;
-  if(S.mode==='setupSettlement'){
-    v.owner=i; v.kind='settlement'; S.setupVertex=k; S.mode='setupRoad';
-    log(`🏠 ${p.name} placed a settlement.`);
-    setHint('Now tap a highlighted edge to place your road.');
-  }else if(S.mode==='buildSettlement'){
-    if(!canAfford(p,COSTS.settlement)) return;
-    payCost(p,COSTS.settlement); v.owner=i; v.kind='settlement'; S.mode=null;
-    log(`🏠 ${p.name} built a settlement.`);
-    setHint('Settlement built!');
-  }else if(S.mode==='buildCity'){
-    if(!canAfford(p,COSTS.city)) return;
-    payCost(p,COSTS.city); v.kind='city'; S.mode=null;
-    log(`🏘️ ${p.name} built a city.`);
-    setHint('City built!');
+/* ================= UI event handlers ================= */
+function sendOrDo(a){
+  if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:a}); return; }
+  hostApplyAct(NET.mode==='local'?S.turn:NET.myIdx, a);
+}
+function uiRoll(){
+  if(!S||S.phase!=='play'||S.rolled) return;
+  if(!canActAs(S.turn)) return;
+  sendOrDo({kind:'roll'});
+}
+function uiEndTurn(){
+  if(!S||S.phase!=='play'||!S.rolled) return;
+  if(!canActAs(S.turn)) return;
+  sendOrDo({kind:'endTurn'});
+  if(NET.mode==='local') showPassDevice();
+}
+function uiVertexClick(k){
+  if(!S||!canActAs(S.turn)) return;
+  if(S.mode==='setupSettlement'){ sendOrDo({kind:'setupSettlement', key:k}); }
+  else if(S.mode==='buildSettlement'){ sendOrDo({kind:'place', what:'settlement', key:k}); }
+  else if(S.mode==='buildCity'){ sendOrDo({kind:'place', what:'city', key:k}); }
+}
+function uiEdgeClick(k){
+  if(!S||!canActAs(S.turn)) return;
+  if(S.mode==='setupRoad'){ sendOrDo({kind:'setupRoad', key:k}); }
+  else if(S.mode==='buildRoad'){ sendOrDo({kind:'place', what:'road', key:k}); }
+}
+function uiHexClick(id){
+  if(!S||S.mode!=='moveRobber'||id===S.robberHex) return;
+  if(!canActAs(S.turn)) return;
+  sendOrDo({kind:'moveRobber', hex:id});
+}
+function effMode(){
+  // guests keep a local-only build mode for highlights; host state is authoritative
+  if(NET.mode==='online'&&!NET.isHost) return NET.localMode||S.mode;
+  return S.mode;
+}
+function uiSetBuildMode(m){
+  if(!S||S.phase!=='play') return;
+  if(!canActAs(S.turn)) return;
+  if(NET.mode==='online'&&!NET.isHost){
+    NET.localMode=(NET.localMode===m)?null:m;
+  }else{
+    S.mode=(S.mode===m)?null:m; // local UI state only; host re-validates on action
   }
-  updateLongest(); checkWin(); refresh();
-}
-function onEdgeClick(ek){
-  const e=S.edges[ek], p=cur(), i=S.turn;
-  if(S.mode==='setupRoad'){
-    e.owner=i;
-    log(`🛣️ ${p.name} placed a road.`);
-    // starting resources on 2nd placement round
-    const round2 = S.setupIdx>=S.players.length;
-    if(round2){
-      const v=S.vertices[S.setupVertex];
-      v.hexes.forEach(hid=>{
-        const h=S.hexes[hid], res=TERRAIN[h.terrain].res;
-        if(res) giveRes(p,res,1);
-      });
-      log(`🎁 ${p.name} collects starting resources.`);
-    }
-    S.setupIdx++; S.setupVertex=null;
-    if(S.setupIdx>=S.setupQueue.length){
-      S.phase='play'; S.turn=S.setupQueue[0]; S.rolled=false; S.mode=null;
-      log('Setup done! Game begins.');
-      showPassDevice();
-    }else{
-      S.turn=S.setupQueue[S.setupIdx]; S.mode='setupSettlement';
-      setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
-    }
-  }else if(S.mode==='buildRoad'){
-    if(!canAfford(p,COSTS.road)) return;
-    payCost(p,COSTS.road); e.owner=i; S.mode=null;
-    log(`🛣️ ${p.name} built a road.`);
-    setHint('Road built!');
-  }
-  updateLongest(); checkWin(); refresh();
-}
-function updateBuildButtons(){
-  const inPlay=S.phase==='play';
-  $('buildRoad').disabled = !inPlay || S.mode==='moveRobber';
-  $('buildSettle').disabled = !inPlay || S.mode==='moveRobber';
-  $('buildCity').disabled = !inPlay || S.mode==='moveRobber';
-  $('bankTradeBtn').disabled = !inPlay || S.mode==='moveRobber';
-  $('offerTradeBtn').disabled = !inPlay || S.mode==='moveRobber';
-}
-function setBuildMode(m){
-  if(S.phase!=='play') return;
-  S.mode = (S.mode===m)? null : m;
   const hints={
     buildRoad:'Tap a highlighted edge to build a road (1🧱 1🪵).',
     buildSettlement:'Tap a highlighted spot to build a settlement (1🧱 1🪵 1🐑 1🌾).',
     buildCity:'Tap one of your settlements to upgrade it to a city (2🌾 3⛰️).',
   };
-  setHint(S.mode? hints[S.mode] : 'Build, trade, or end your turn.');
+  const em=effMode();
+  setHint(em&&hints[em]?hints[em]:'Build, trade, or end your turn.');
   refresh();
 }
-
-/* ================= Trading ================= */
-function bankTradeUI(){
-  const p=cur();
-  const givables=RES.filter(r=>p.res[r]>=4);
-  if(!givables.length){ setHint('You need 4 of a kind to trade with the bank.'); return; }
-  const ov=overlay(`<h2>🔄 Bank Trade (4:1)</h2>
-    <div class="tradeRow"><span>Give 4:</span><select id="tGive">${givables.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]} (${p.res[r]})</option>`).join('')}</select></div>
-    <div class="tradeRow"><span>Get 1:</span><select id="tGet">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
-    <div class="btnrow"><button class="btn primary" id="tGo">Trade</button><button class="btn" id="tCancel">Cancel</button></div>`);
-  ov.querySelector('#tCancel').onclick=closeOverlay;
-  ov.querySelector('#tGo').onclick=()=>{
-    const g=ov.querySelector('#tGive').value, w=ov.querySelector('#tGet').value;
-    if(g===w||p.res[g]<4){ closeOverlay(); return; }
-    p.res[g]-=4; p.res[w]++;
-    log(`🔄 ${p.name} traded 4${RES_ICON[g]} for 1${RES_ICON[w]} with the bank.`);
-    closeOverlay(); refresh();
-  };
+// NOTE: in online mode S.mode is synced from host; placement intents carry the explicit 'what'.
+function onVertexTap(k){
+  if(!S) return;
+  const em=effMode();
+  if(NET.mode==='online'&&!NET.isHost){
+    if(S.mode==='setupSettlement') uiVertexClick(k);
+    else if(em==='buildSettlement'){ NET.localMode=null; sendOrDo({kind:'place', what:'settlement', key:k}); }
+    else if(em==='buildCity'){ NET.localMode=null; sendOrDo({kind:'place', what:'city', key:k}); }
+    return;
+  }
+  uiVertexClick(k);
 }
-function offerTradeUI(){
-  const p=cur();
-  const ov=overlay(`<h2>🤝 Trade Offer — ${escapeHtml(p.name)}</h2>
-    <div class="tradeRow"><span>I give:</span><select id="oGiveN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
-    <select id="oGive">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
-    <div class="tradeRow"><span>I want:</span><select id="oWantN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
-    <select id="oWant">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
-    <div class="btnrow"><button class="btn primary" id="oPost">Post Offer</button><button class="btn" id="oCancel">Cancel</button></div>`);
-  ov.querySelector('#oCancel').onclick=closeOverlay;
-  ov.querySelector('#oPost').onclick=()=>{
-    const gn=+ov.querySelector('#oGiveN').value, gr=ov.querySelector('#oGive').value;
-    const wn=+ov.querySelector('#oWantN').value, wr=ov.querySelector('#oWant').value;
-    if(gr===wr||p.res[gr]<gn){ setHint('Invalid offer.'); closeOverlay(); return; }
-    closeOverlay();
-    const others=S.players.map((q,i)=>i).filter(i=>i!==S.turn && S.players[i].res[wr]>=wn);
-    if(!others.length){ setHint('No one can accept that offer right now.'); return; }
-    const ov2=overlay(`<h2>🤝 ${escapeHtml(p.name)} offers ${gn}${RES_ICON[gr]} for ${wn}${RES_ICON[wr]}</h2>
-      <p>Who accepts?</p>`+
-      others.map(i=>`<button class="btn victimBtn" data-i="${i}">${escapeHtml(S.players[i].name)} — Accept</button>`).join('')+
-      `<button class="btn" id="oDecline">No Deal</button>`);
-    ov2.querySelector('#oDecline').onclick=()=>{ closeOverlay(); log(`🤝 ${p.name}'s offer was declined.`); refresh(); };
-    ov2.addEventListener('click',e=>{
-      const b=e.target.closest('button[data-i]'); if(!b) return;
-      const i=+b.dataset.i, q=S.players[i];
-      p.res[gr]-=gn; q.res[gr]+=gn; q.res[wr]-=wn; p.res[wr]+=wn;
-      log(`🤝 ${p.name} traded ${gn}${RES_ICON[gr]} for ${wn}${RES_ICON[wr]} with ${q.name}.`);
-      closeOverlay(); refresh();
-    });
-  };
+function onEdgeTap(k){
+  if(!S) return;
+  if(NET.mode==='online'&&!NET.isHost){
+    if(S.mode==='setupRoad') uiEdgeClick(k);
+    else if(effMode()==='buildRoad'){ NET.localMode=null; sendOrDo({kind:'place', what:'road', key:k}); }
+    return;
+  }
+  uiEdgeClick(k);
 }
 
-/* ================= Turn flow ================= */
-function endTurn(){
-  if(S.phase!=='play'||!S.rolled) return;
-  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null;
-  log(`➡️ ${cur().name}'s turn.`);
-  showPassDevice(); refresh();
-}
-function showPassDevice(){
-  if(S.phase==='gameover') return;
-  const p=cur();
-  const ov=overlay(`<h2 style="color:${p.color==='#f5f5f5'?'#333':p.color}">📱 Pass to ${escapeHtml(p.name)}</h2>
-    <p>Hand the device over, then tap below.</p>
-    <div class="btnrow"><button class="btn primary" id="passOk" style="font-size:1.1rem;padding:14px;">I'm ${escapeHtml(p.name)} — start my turn</button></div>`);
-  ov.querySelector('#passOk').onclick=()=>{
-    closeOverlay();
-    if(S.phase==='setup') setHint(`${p.name}: tap a highlighted spot for your settlement.`);
-    else setHint(`${p.name}: roll the dice!`);
-    refresh();
-  };
-}
-
-/* ================= Overlays ================= */
+/* ================= Modals & prompts ================= */
+const svgNS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+function el(tag,attrs,parent){ const e=document.createElementNS(svgNS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e; }
 function overlay(html){
   const root=$('overlayRoot');
   const ov=document.createElement('div'); ov.className='overlay';
@@ -748,13 +834,167 @@ function overlay(html){
   root.appendChild(ov); return ov;
 }
 function closeOverlay(){ $('overlayRoot').innerHTML=''; }
+function animateDice(d1,d2){
+  if(typeof document==='undefined') return;
+  const faces='⚀⚁⚂⚃⚄⚅', diceEl=$('dice');
+  if(!diceEl) return;
+  diceEl.classList.add('rolling');
+  let ticks=0;
+  const iv=setInterval(()=>{
+    diceEl.textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
+    if(++ticks>=4){ clearInterval(iv); diceEl.textContent=faces[d1-1]+faces[d2-1]; diceEl.classList.remove('rolling'); }
+  },90);
+}
+let shownPrompt=null;
+function renderPrompts(){
+  if(!S) return;
+  const key=S.pending?('p'+S.pending.kind+S.pending.player+S.pending.chooser):(S.offer?('o'+S.offer.from):null);
+  // offer banner (non-modal)
+  renderOfferBox();
+  if(key===shownPrompt) return;
+  shownPrompt=key;
+  if(S.pending&&S.pending.kind==='discard'&&S.pending.player===NET.myIdx){
+    showDiscardModal(S.pending);
+  }else if(S.pending&&S.pending.kind==='steal'&&S.pending.chooser===NET.myIdx){
+    showStealModal(S.pending.victims);
+  }
+}
+function showDiscardModal(dq){
+  const p=S.players[dq.player];
+  const chosen={wood:0,brick:0,sheep:0,wheat:0,ore:0};
+  const ov=overlay(`<h2>🕵️ Robber! ${escapeHtml(p.name)} discards ${dq.must}</h2>
+    <p>You have ${totalCards(p)} cards — tap cards to discard ${dq.must}.</p>
+    <div id="discRes" class="btnrow"></div>
+    <p id="discCount"></p>
+    <div class="btnrow"><button class="btn primary" id="discOk" disabled>Done</button></div>`);
+  const render=()=>{
+    const box=ov.querySelector('#discRes'); box.innerHTML='';
+    let sum=0; for(const r in chosen) sum+=chosen[r];
+    ov.querySelector('#discCount').textContent=`Selected ${sum} / ${dq.must}`;
+    ov.querySelector('#discOk').disabled=sum!==dq.must;
+    RES.forEach(r=>{
+      const b=document.createElement('button'); b.className='btn';
+      b.innerHTML=`${RES_ICON[r]} ${p.res[r]} <b>(-${chosen[r]})</b>`;
+      box.appendChild(b);
+    });
+  };
+  render();
+  ov.querySelector('#discRes').addEventListener('click',e=>{
+    const btn=e.target.closest('button'); if(!btn) return;
+    const idx=[...ov.querySelector('#discRes').children].indexOf(btn);
+    const r=RES[idx]; let sum=0; for(const k in chosen) sum+=chosen[k];
+    if(sum<dq.must&&chosen[r]<p.res[r]) chosen[r]++;
+    else if(chosen[r]>0) chosen[r]--;
+    render();
+  });
+  ov.querySelector('#discOk').onclick=()=>{
+    closeOverlay(); shownPrompt=null;
+    if(NET.mode==='online'&&!NET.isHost){
+      netSend({t:'act', a:{kind:'discard', cards:chosen}});
+    }else{
+      // local or host's own discard
+      RES.forEach(r=>{ p.res[r]-=chosen[r]; });
+      addLog(`🕵️ ${p.name} discarded ${dq.must} cards.`);
+      S.discardQueue.shift(); S.pending=null;
+      processDiscard(); afterChange();
+    }
+  };
+}
+function showStealModal(victims){
+  const ov=overlay(`<h2>🕵️ Steal from whom?</h2>`+
+    victims.map(vi=>`<button class="btn victimBtn" data-vi="${vi}">Steal from ${escapeHtml(S.players[vi].name)}</button>`).join(''));
+  ov.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-vi]'); if(!b) return;
+    closeOverlay(); shownPrompt=null;
+    const vi=parseInt(b.dataset.vi);
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'steal', victim:vi}}); }
+    else{ doSteal(vi); afterChange(); }
+  });
+}
+function renderOfferBox(){
+  const box=$('offerBox'); if(!box) return; box.innerHTML='';
+  if(!S||!S.offer) return;
+  const o=S.offer, from=S.players[o.from];
+  const d=document.createElement('div'); d.className='offerBanner';
+  d.innerHTML=`🤝 <b>${escapeHtml(from.name)}</b> offers ${o.giveN}${RES_ICON[o.giveR]} for ${o.wantN}${RES_ICON[o.wantR]}`;
+  const me=NET.mode==='local'?null:S.players[NET.myIdx];
+  if(NET.mode==='local'){
+    // local: any other player taps to accept
+    S.players.forEach((p,i)=>{
+      if(i!==o.from&&p.res[o.wantR]>=o.wantN){
+        const b=document.createElement('button'); b.className='btn'; b.style.margin='4px';
+        b.textContent=`${p.name} accepts`;
+        b.onclick=()=>{ hostApplyAct(i,{kind:'acceptOffer'}); };
+        d.appendChild(b);
+      }
+    });
+    const dec=document.createElement('button'); dec.className='btn'; dec.style.margin='4px';
+    dec.textContent='No deal';
+    dec.onclick=()=>{ hostApplyAct(o.from,{kind:'declineOffer'}); };
+    d.appendChild(dec);
+  }else if(me&&NET.myIdx!==o.from&&me.res[o.wantR]>=o.wantN){
+    const b=document.createElement('button'); b.className='btn green'; b.style.margin='4px';
+    b.textContent='Accept';
+    b.onclick=()=>netSend({t:'act', a:{kind:'acceptOffer'}});
+    d.appendChild(b);
+  }else if(me&&NET.myIdx===o.from){
+    const b=document.createElement('button'); b.className='btn'; b.style.margin='4px';
+    b.textContent='Cancel offer';
+    b.onclick=()=>netSend({t:'act', a:{kind:'declineOffer'}});
+    d.appendChild(b);
+  }
+  box.appendChild(d);
+}
+function bankTradeUI(){
+  if(!S) return;
+  const me=NET.mode==='local'?cur():S.players[NET.myIdx];
+  const givables=RES.filter(r=>me.res[r]>=4);
+  if(!givables.length){ setHint('You need 4 of a kind to trade with the bank.'); return; }
+  const ov=overlay(`<h2>🔄 Bank Trade (4:1)</h2>
+    <div class="tradeRow"><span>Give 4:</span><select id="tGive">${givables.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]} (${me.res[r]})</option>`).join('')}</select></div>
+    <div class="tradeRow"><span>Get 1:</span><select id="tGet">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="btnrow"><button class="btn primary" id="tGo">Trade</button><button class="btn" id="tCancel">Cancel</button></div>`);
+  ov.querySelector('#tCancel').onclick=closeOverlay;
+  ov.querySelector('#tGo').onclick=()=>{
+    const g=ov.querySelector('#tGive').value, w=ov.querySelector('#tGet').value;
+    closeOverlay();
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'bankTrade', give:g, get:w}}); }
+    else{ hostApplyAct(S.turn,{kind:'bankTrade', give:g, get:w}); }
+  };
+}
+function offerTradeUI(){
+  if(!S) return;
+  const ov=overlay(`<h2>🤝 Trade Offer</h2>
+    <div class="tradeRow"><span>I give:</span><select id="oGiveN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
+    <select id="oGive">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="tradeRow"><span>I want:</span><select id="oWantN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
+    <select id="oWant">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
+    <div class="btnrow"><button class="btn primary" id="oPost">Post Offer</button><button class="btn" id="oCancel">Cancel</button></div>`);
+  ov.querySelector('#oCancel').onclick=closeOverlay;
+  ov.querySelector('#oPost').onclick=()=>{
+    const a={kind:'offer',
+      giveN:+ov.querySelector('#oGiveN').value, giveR:ov.querySelector('#oGive').value,
+      wantN:+ov.querySelector('#oWantN').value, wantR:ov.querySelector('#oWant').value};
+    closeOverlay();
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:a}); }
+    else{ hostApplyAct(S.turn,a); }
+  };
+}
+function showPassDevice(){
+  if(NET.mode!=='local'||!S||S.phase==='gameover') return;
+  const p=cur();
+  const ov=overlay(`<h2>📱 Pass to ${escapeHtml(p.name)}</h2>
+    <p>Hand the device over, then tap below.</p>
+    <div class="btnrow"><button class="btn primary" id="passOk" style="font-size:1.1rem;padding:14px;">I'm ${escapeHtml(p.name)} — start my turn</button></div>`);
+  ov.querySelector('#passOk').onclick=()=>{ closeOverlay(); refresh(); };
+}
 function showWin(){
   const p=S.players[S.winner];
   overlay(`<div id="winConfetti">🎉🏆🎉</div>
     <h2 style="text-align:center">${escapeHtml(p.name)} wins!</h2>
     <p style="text-align:center">${vp(p)} victory points</p>
-    <div class="btnrow" style="justify-content:center"><button class="btn primary" id="againBtn">🔄 Play Again</button></div>`);
-  document.getElementById('againBtn').onclick=()=>{ closeOverlay(); showStart(); };
+    <div class="btnrow" style="justify-content:center"><button class="btn primary" id="againBtn">🔄 Play Again</button></div>`)
+    .querySelector('#againBtn').onclick=()=>{ closeOverlay(); location.reload(); };
 }
 function showRules(){
   overlay(`<h2>❓ How to Play (Family Rules)</h2>
@@ -765,15 +1005,182 @@ function showRules(){
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
-    <li>📱 This is <b>pass-and-play</b> — one device, pass it around. No internet needed!</li>
+    <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
   </ul>
   <div class="btnrow"><button class="btn primary" id="rulesOk">Got it!</button></div>`)
   .querySelector('#rulesOk').onclick=closeOverlay;
 }
-function showStart(){
+
+/* ================= Rendering ================= */
+function renderBoard(){
+  const svg=$('board'); if(!svg||!S) return; svg.innerHTML='';
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  S.hexes.forEach(h=>{
+    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
+    corners.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+  });
+  const pad=70;
+  svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
+  const g=el('g',{},svg);
+  S.hexes.forEach(h=>{
+    const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
+    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
+    hg.addEventListener('click',()=>uiHexClick(h.id));
+    el('polygon',{points:corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' '), fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
+    const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
+    t.textContent=TERRAIN[h.terrain].icon;
+    if(h.number!==null){
+      const hot=(h.number===6||h.number===8);
+      el('circle',{cx:c.x, cy:c.y+22, r:17, fill:'#f7f3e8', stroke:'#555','stroke-width':1.5},hg);
+      const nt=el('text',{x:c.x, y:c.y+29, 'text-anchor':'middle','font-size':'20','font-weight':'bold', fill:hot?'#c0392b':'#222'},hg);
+      nt.textContent=h.number;
+      const dt=el('text',{x:c.x, y:c.y+42, 'text-anchor':'middle','font-size':'10', fill:hot?'#c0392b':'#222'},hg);
+      dt.textContent='•'.repeat(h.number<=7?h.number-1:13-h.number);
+    }
+    if(h.id===S.robberHex){
+      const rt=el('text',{x:c.x, y:c.y+4, 'text-anchor':'middle','font-size':'34'},hg);
+      rt.textContent='🕵️';
+    }
+  });
+  for(const ek in S.edges){
+    const e=S.edges[ek];
+    if(e.owner>=0){
+      const a=S.vertices[e.a], b=S.vertices[e.b];
+      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':8},g);
+      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:'rgba(0,0,0,.25)','stroke-width':8,'stroke-dasharray':'2 10'},g);
+    }
+  }
+  const canPlace=canActAs(S.turn);
+  if(canPlace&&(effMode()==='buildRoad'||S.mode==='setupRoad')){
+    for(const ek in S.edges){
+      const e=S.edges[ek];
+      if(e.owner===-1&&edgeValidUI(e)){
+        const a=S.vertices[e.a], b=S.vertices[e.b];
+        const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'espot'},g);
+        l.addEventListener('click',ev=>{ev.stopPropagation(); onEdgeTap(ek);});
+      }
+    }
+  }
+  for(const k in S.vertices){
+    const v=S.vertices[k];
+    if(v.owner>=0){
+      const col=S.players[v.owner].color;
+      if(v.kind==='city'){
+        el('circle',{cx:v.x,cy:v.y,r:15,fill:col,stroke:'#222','stroke-width':2.5,class:'city'},g);
+        el('circle',{cx:v.x,cy:v.y,r:7,fill:'none',stroke:'#fff','stroke-width':2.5,class:'city'},g);
+      }else{
+        el('circle',{cx:v.x,cy:v.y,r:11,fill:col,stroke:'#222','stroke-width':2.5,class:'settlement'},g);
+      }
+    }
+  }
+  if(canPlace&&(effMode()==='buildSettlement'||effMode()==='buildCity'||S.mode==='setupSettlement')){
+    for(const k in S.vertices){
+      const v=S.vertices[k];
+      if(vertexValidUI(v)){
+        const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
+        c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexTap(k);});
+      }
+    }
+  }
+}
+function renderStandings(){
+  const d=$('standings'); if(!d||!S) return; d.innerHTML='';
+  S.players.forEach((p,i)=>{
+    const c=document.createElement('div');
+    c.className='pchip'+(i===S.turn&&S.phase!=='gameover'?' active':'')+(p.dc?' dc':'')+((NET.mode==='online'&&i===NET.myIdx)?' me':'');
+    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}${p.dc?' ⚠️':''}`;
+    d.appendChild(c);
+  });
+}
+function renderRes(){
+  const bar=$('resBar'); if(!bar||!S) return; bar.innerHTML='';
+  const me=NET.mode==='local'?cur():S.players[NET.myIdx];
+  if(!me) return;
+  $('resTitle').textContent='Resources — '+me.name+' ('+totalCards(me)+' cards)';
+  RES.forEach(r=>{
+    const d=document.createElement('div'); d.className='res';
+    d.innerHTML=`${RES_ICON[r]} ${me.res[r]}<small>${RES_NAME[r]}</small>`;
+    bar.appendChild(d);
+  });
+}
+function renderLog(){
+  const d=$('log'); if(!d||!S) return; d.innerHTML='';
+  S.log.forEach(m=>{ const x=document.createElement('div'); x.textContent=m; d.appendChild(x); });
+}
+function setHint(t){ if(typeof document==='undefined') return; const h=$('hint'); if(h) h.innerHTML=t; }
+function refresh(){
+  if(!S) return;
+  renderBoard(); renderStandings(); renderRes(); renderLog(); renderOfferBox();
+  const p=S.players[S.turn];
+  if(p){
+    $('turnDot').style.background=p.color;
+    if(S.phase==='gameover'){ $('turnText').textContent='🏆 '+S.players[S.winner].name+' wins!'; }
+    else if(S.phase==='setup'){ $('turnText').textContent=p.name+' — setup: place '+(S.setupSub==='settlement'?'a settlement':'a road'); }
+    else{
+      const mine=canActAs(S.turn);
+      $('turnText').textContent=mine?'🎯 Your turn, '+p.name:p.name+"'s turn";
+    }
+  }
+  const mine=canActAs(S.turn);
+  const interactive=S.phase==='play'&&mine;
+  $('rollBtn').disabled=!(interactive&&!S.rolled);
+  $('endTurnBtn').disabled=!(interactive&&S.rolled);
+  const canBuild=interactive&&S.mode!=='moveRobber';
+  $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
+  $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
+  $('offerTradeBtn').disabled=!canBuild;
+  // dice faces from state
+  const diceEl=$('dice');
+  if(diceEl&&S.dice) diceEl.textContent='⚀⚁⚂⚃⚄⚅'[S.dice[0]-1]+'⚀⚁⚂⚃⚄⚅'[S.dice[1]-1];
+}
+
+/* ================= Menu & lobby ================= */
+function showMenu(){
   const ov=overlay(`<h2>🏝️ Family Catan</h2>
-    <p>Pass-and-play for 2–4 players on one device. No internet needed!</p>
-    <label><b>Number of players:</b></label>
+    <p>2–4 players. Build, trade, race to 10 points!</p>
+    <input type="text" id="menuName" placeholder="Your name" maxlength="12">
+    <div class="btnrow">
+      <button class="btn" id="mLocal">🎮 Same device</button>
+      <button class="btn primary" id="mHost">🌐 Create online room</button>
+    </div>
+    <div class="tradeRow" style="margin-top:10px">
+      <input type="text" id="mCode" placeholder="Room code" maxlength="4" style="width:130px;text-transform:uppercase">
+      <button class="btn green" id="mJoin">Join room</button>
+    </div>
+    <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>`);
+  const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
+  ov.querySelector('#mLocal').onclick=()=>{
+    closeOverlay();
+    NET.mode='local'; NET.myIdx=0;
+    showLocalSetup();
+  };
+  ov.querySelector('#mHost').onclick=async()=>{
+    const err=ov.querySelector('#menuErr');
+    err.textContent='Creating room…';
+    try{
+      NET.mode='online';
+      const code=await hostRoom(name());
+      closeOverlay();
+      showLobby(true);
+    }catch(e){ err.textContent='Could not create room: '+e.message; NET.mode=null; }
+  };
+  ov.querySelector('#mJoin').onclick=async()=>{
+    const err=ov.querySelector('#menuErr');
+    const code=ov.querySelector('#mCode').value.trim().toUpperCase();
+    if(code.length!==4){ err.textContent='Enter the 4-letter room code.'; return; }
+    err.textContent='Joining…';
+    try{
+      NET.mode='online';
+      await joinRoom(code,name());
+      closeOverlay();
+      showLobby(false);
+    }catch(e){ err.textContent=e.message; NET.mode=null; setNetStatus('offline','off'); }
+  };
+}
+function showLocalSetup(){
+  let n=4;
+  const ov=overlay(`<h2>🎮 Same Device</h2>
+    <p>Pass-and-play on this phone. How many players?</p>
     <div class="btnrow" id="npick">
       <button class="btn" data-n="2">2</button>
       <button class="btn" data-n="3">3</button>
@@ -781,7 +1188,6 @@ function showStart(){
     </div>
     <div id="nameFields"></div>
     <div class="btnrow"><button class="btn primary" id="startGo" style="font-size:1.1rem">▶ Start Game</button></div>`);
-  let n=4;
   const renderNames=()=>{
     const nf=ov.querySelector('#nameFields'); nf.innerHTML='';
     for(let i=0;i<n;i++){
@@ -800,24 +1206,59 @@ function showStart(){
     for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
     closeOverlay();
     newGame(names);
-    S.turn=S.setupQueue[0]; S.mode='setupSettlement';
+    setNetStatus('same device','on');
     setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
     refresh();
   };
 }
+function showLobby(isHost){
+  // non-modal persistent lobby rendered into overlayRoot
+  closeOverlay();
+  const ov=overlay(`<h2>🌐 ${isHost?'Room created!':'Joined!'}</h2>
+    <p>Share this code with family:</p>
+    <div class="roomCode">${NET.code}</div>
+    <div id="lobbyList"></div>
+    ${isHost?'<div class="btnrow"><button class="btn primary" id="startGameBtn">▶ Start Game</button></div>':'<p>Waiting for the host to start…</p>'}
+    <p style="font-size:.8rem;color:#666">Everyone opens <b>this same page</b> and joins with the code. No accounts needed.</p>`);
+  NET.lobbyOv=ov;
+  renderLobby();
+  if(isHost){
+    ov.querySelector('#startGameBtn').onclick=()=>{
+      if(NET.lobbyPlayers.length<2){ alert('Need at least 2 players to start.'); return; }
+      const names=NET.lobbyPlayers.map(p=>p.name);
+      newGame(names);
+      NET.started=true; NET.myIdx=0;
+      for(const idx in NET.conns){ try{ NET.conns[idx].send({t:'state', s:serializeState()}); }catch(e){} }
+      closeLobbyIfOpen();
+      setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
+      refresh();
+    };
+  }
+}
+function renderLobby(){
+  const list=document.querySelector('#lobbyList');
+  if(!list) return;
+  list.innerHTML=NET.lobbyPlayers.map((p,i)=>
+    `<div class="lobbyPlayer"><span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)}${i===0?' (host)':''}</div>`
+  ).join('');
+}
+function closeLobbyIfOpen(){
+  if(NET.lobbyOv){ NET.lobbyOv.remove(); NET.lobbyOv=null; }
+}
 
 /* ================= Boot ================= */
 function boot(){
-  $('rollBtn').onclick=rollDice;
-  $('endTurnBtn').onclick=endTurn;
-  $('buildRoad').onclick=()=>setBuildMode('buildRoad');
-  $('buildSettle').onclick=()=>setBuildMode('buildSettlement');
-  $('buildCity').onclick=()=>setBuildMode('buildCity');
-  $('bankTradeBtn').onclick=bankTradeUI;
-  $('offerTradeBtn').onclick=offerTradeUI;
+  $('rollBtn').onclick=uiRoll;
+  $('endTurnBtn').onclick=uiEndTurn;
+  $('buildRoad').onclick=()=>uiSetBuildMode('buildRoad');
+  $('buildSettle').onclick=()=>uiSetBuildMode('buildSettlement');
+  $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
+  $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&S.phase==='play') bankTradeUI(); };
+  $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('rulesBtn').onclick=showRules;
-  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) showStart(); };
-  showStart();
+  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) location.reload(); };
+  setNetStatus('offline','');
+  showMenu();
 }
 if(typeof document!=='undefined'){ boot(); }
 </script>
