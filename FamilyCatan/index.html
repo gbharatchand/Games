@@ -5,50 +5,66 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Family Catan</title>
 <style>
+  @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap");
   :root {
-    --felt: #1d5c38;
-    --panel: #f7f3e8;
+    --felt1: #0d3a23;
+    --felt2: #1d5c38;
+    --panel: #faf6ec;
     --ink: #2b2b2b;
-    --accent: #c0392b;
+    --accent: #b03a2e;
+    --gold: #d4a017;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
-    background: var(--felt); color: var(--ink);
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.07), transparent 60%),
+      radial-gradient(ellipse at 50% 120%, rgba(0,0,0,.45), transparent 60%),
+      linear-gradient(160deg, var(--felt2), var(--felt1));
+    color: var(--ink);
     min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     touch-action: manipulation;
   }
+  h1, h2, .btn { font-family: "Baloo 2", -apple-system, 'Segoe UI', sans-serif; }
   #app { width: 100%; max-width: 1100px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
   header {
-    background: var(--panel); border-radius: 12px; padding: 8px 14px;
+    background: linear-gradient(180deg, #fffdf6, var(--panel));
+    border-radius: 16px; padding: 10px 16px;
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 #fff;
+    border: 1px solid #e8dcc0;
   }
-  header h1 { margin: 0; font-size: 1.3rem; }
+  header h1 { margin: 0; font-size: 1.4rem; letter-spacing: .5px; }
   #standings { display: flex; gap: 8px; flex-wrap: wrap; }
   .pchip {
-    display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px;
-    background: #fff; border: 2px solid #ccc; font-size: .85rem; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px;
+    background: #fff; border: 2px solid #d8cba4; font-size: .85rem; font-weight: 700;
+    box-shadow: 0 2px 4px rgba(0,0,0,.12);
   }
   .pchip .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #999; }
-  .pchip.active { border-color: #111; box-shadow: 0 0 0 2px #1113; }
+  .pchip.active { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,.2); }
   #turnBanner {
-    background: var(--panel); border-radius: 12px; padding: 8px 14px; font-weight: 700;
+    background: linear-gradient(180deg, #fffdf6, var(--panel));
+    border-radius: 16px; padding: 10px 16px; font-weight: 700; font-size: 1.05rem;
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 #fff;
+    border: 1px solid #e8dcc0;
   }
-  #turnBanner .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #555; }
+  #turnBanner .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; box-shadow: 0 0 8px currentColor; }
   #main { display: flex; gap: 10px; align-items: stretch; }
   #boardWrap {
-    flex: 1 1 auto; background: #17452a; border-radius: 12px; padding: 6px;
+    flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
     display: flex; justify-content: center; align-items: center; min-width: 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    box-shadow: inset 0 2px 12px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.3);
+    border: 1px solid rgba(255,255,255,.12);
   }
   #board { width: 100%; height: auto; max-height: 62vh; }
+  #board .hex polygon { filter: drop-shadow(0 3px 3px rgba(0,0,0,.35)); }
   #panel {
-    flex: 0 0 300px; background: var(--panel); border-radius: 12px; padding: 12px;
+    flex: 0 0 300px; background: linear-gradient(180deg, #fffdf6, var(--panel));
+    border-radius: 16px; padding: 14px;
     display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow-y: auto;
-    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    box-shadow: 0 4px 14px rgba(0,0,0,.35); border: 1px solid #e8dcc0;
   }
   @media (max-width: 760px) {
     #main { flex-direction: column; }
@@ -56,58 +72,74 @@
     #board { max-height: 52vh; }
   }
   .btn {
-    border: none; border-radius: 10px; padding: 10px 12px; font-size: .95rem; font-weight: 700;
-    cursor: pointer; background: #fff; border: 2px solid #bbb; color: var(--ink);
+    border: none; border-radius: 12px; padding: 10px 14px; font-size: .95rem; font-weight: 700;
+    cursor: pointer; color: var(--ink);
+    background: linear-gradient(180deg, #ffffff, #efe8d2);
+    border: 2px solid #d8cba4;
+    box-shadow: 0 3px 0 #c9b98f, 0 4px 8px rgba(0,0,0,.15);
+    transition: transform .06s ease, box-shadow .06s ease;
   }
-  .btn:active { transform: scale(.97); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn.green { background: #27ae60; border-color: #27ae60; color: #fff; }
-  .btn:disabled { opacity: .45; cursor: default; }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #c9b98f; }
+  .btn.primary { background: linear-gradient(180deg, #d35450, var(--accent)); border-color: #8e2f24; color: #fff; box-shadow: 0 3px 0 #7c271e, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .btn.primary:active { box-shadow: 0 1px 0 #7c271e; }
+  .btn.green { background: linear-gradient(180deg, #3bc47a, #27ae60); border-color: #1e8449; color: #fff; box-shadow: 0 3px 0 #186a38, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .btn.green:active { box-shadow: 0 1px 0 #186a38; }
+  .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
-  #dice { font-size: 2.2rem; }
+  #dice { font-size: 2.4rem; transition: transform .1s; }
+  #dice.rolling { animation: shake .35s ease; }
+  @keyframes shake {
+    0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
+    50% { transform: rotate(14deg) scale(1.1); } 75% { transform: rotate(-8deg); }
+  }
   #resBar { display: flex; gap: 6px; flex-wrap: wrap; }
   .res {
-    background: #fff; border: 2px solid #ddd; border-radius: 10px; padding: 6px 8px;
-    font-size: .85rem; font-weight: 700; min-width: 58px; text-align: center;
+    background: #fff; border: 2px solid #e0d5b5; border-radius: 10px; padding: 6px 8px;
+    font-size: .9rem; font-weight: 800; min-width: 58px; text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,.08);
   }
-  .res small { display: block; font-weight: 400; font-size: .7rem; color: #666; }
+  .res small { display: block; font-weight: 600; font-size: .68rem; color: #8a7a55; }
   #buildBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  #buildBtns .btn { font-size: .82rem; padding: 8px 6px; }
+  #buildBtns .btn { font-size: .82rem; padding: 8px 6px; line-height: 1.35; }
   #log {
-    background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 8px;
+    background: #fffdf6; border: 1px solid #e0d5b5; border-radius: 10px; padding: 8px;
     font-size: .8rem; max-height: 160px; overflow-y: auto;
   }
-  #log div { padding: 2px 0; border-bottom: 1px dotted #eee; }
-  .hint { font-size: .85rem; background: #fff8e1; border: 1px solid #f0d060; border-radius: 8px; padding: 8px; }
+  #log div { padding: 3px 0; border-bottom: 1px dotted #e8dcc0; }
+  .hint { font-size: .88rem; background: #fff8e1; border: 1px solid var(--gold); border-radius: 10px; padding: 9px 10px; }
   /* SVG board */
   .hex { cursor: default; }
   .hex.robber-ok { cursor: pointer; }
-  .hex.robber-ok polygon { stroke: #ffeb3b; stroke-width: 4; }
+  .hex.robber-ok polygon { stroke: var(--gold); stroke-width: 4; }
   .vspot { fill: rgba(255,255,255,.55); stroke: #fff; stroke-width: 2; cursor: pointer; }
-  .vspot:hover { fill: #ffeb3b; }
+  .vspot:hover { fill: var(--gold); }
   .espot { stroke: rgba(255,255,255,.7); stroke-width: 10; cursor: pointer; fill: none; }
-  .espot:hover { stroke: #ffeb3b; }
+  .espot:hover { stroke: var(--gold); }
   .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
-  .settlement, .city { pointer-events: none; }
+  .settlement, .city { pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
   /* overlays */
   .overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50;
     display: flex; align-items: center; justify-content: center; padding: 16px;
+    backdrop-filter: blur(2px);
   }
   .card {
-    background: var(--panel); border-radius: 16px; padding: 22px; max-width: 480px; width: 100%;
-    max-height: 88vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    background: linear-gradient(180deg, #fffdf6, var(--panel));
+    border-radius: 18px; padding: 24px; max-width: 480px; width: 100%;
+    max-height: 88vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,.55); border: 1px solid #e8dcc0;
   }
   .card h2 { margin-top: 0; }
   .card input[type=text] {
-    width: 100%; padding: 10px; margin: 6px 0; border-radius: 8px; border: 2px solid #bbb; font-size: 1rem;
+    width: 100%; padding: 10px; margin: 6px 0; border-radius: 10px; border: 2px solid #d8cba4; font-size: 1rem;
+    background: #fff;
   }
   .card .btnrow { margin-top: 12px; }
   .pcolor-pick { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
   .pcolor-pick .dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #555; }
   .tradeRow { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-  .tradeRow select { padding: 8px; border-radius: 8px; font-size: .9rem; }
+  .tradeRow select { padding: 8px; border-radius: 8px; font-size: .9rem; border: 2px solid #d8cba4; background: #fff; }
   .victimBtn { display: block; width: 100%; margin: 6px 0; }
   #winConfetti { font-size: 3rem; text-align: center; }
   .rulesList { font-size: .9rem; line-height: 1.5; }
@@ -413,7 +445,13 @@ function rollDice(){
   const d1=1+Math.floor(Math.random()*6), d2=1+Math.floor(Math.random()*6);
   S.dice=[d1,d2];
   const sum=d1+d2;
-  $('dice').textContent='⚀⚁⚂⚃⚄⚅'[d1-1]+'⚀⚁⚂⚃⚄⚅'[d2-1];
+  const faces='⚀⚁⚂⚃⚄⚅', diceEl=$('dice');
+  diceEl.classList.add('rolling');
+  let ticks=0;
+  const iv=setInterval(()=>{
+    diceEl.textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
+    if(++ticks>=4){ clearInterval(iv); diceEl.textContent=faces[d1-1]+faces[d2-1]; diceEl.classList.remove('rolling'); }
+  },90);
   if(sum===7){ log(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
   else{
     log(`🎲 ${cur().name} rolled ${sum}`);
