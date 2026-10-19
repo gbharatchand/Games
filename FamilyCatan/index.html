@@ -320,7 +320,7 @@ function portRate(pi,res){
 
 /* ================= Game state ================= */
 let S=null;
-function newGame(playerNames){
+function newGame(playerNames,botFlags){
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
@@ -334,6 +334,7 @@ function newGame(playerNames){
     setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
     mode:null, discardQueue:[], pending:null, offer:null,
     log:[], winner:-1,
+    bots:playerNames.map((_,i)=>!!(botFlags&&botFlags[i])),
   };
   const n=S.players.length;
   for(let i=0;i<n;i++) S.setupQueue.push(i);
@@ -633,6 +634,7 @@ function afterChange(){
   updateLongest(); checkWin();
   if(NET.mode==='online'&&NET.isHost){ netSync(); }
   refresh(); renderPrompts();
+  maybeBot();
 }
 
 /* ================= Placement validity (host-side) ================= */
@@ -710,7 +712,8 @@ function processDiscard(){
     return;
   }
   const dq=S.discardQueue[0];
-  if(isLocalPlayer(dq.player)){ showDiscardModal(dq); }
+  if(isBot(dq.player)){ botAutoDiscard(dq); }
+  else if(isLocalPlayer(dq.player)){ showDiscardModal(dq); }
   else{
     S.pending={kind:'discard', player:dq.player, must:dq.must};
     setHint(`🕵️ Waiting for ${S.players[dq.player].name} to discard ${dq.must} cards…`);
@@ -727,10 +730,11 @@ function doMoveRobber(hexId){
   if(victims.size===0){ S.pending=null; setHint('Robber moved. No one to steal from.'); }
   else if(victims.size===1){ doSteal([...victims][0]); }
   else{
-    const chooser=S.turn;
-    if(isLocalPlayer(chooser)){ showStealModal([...victims]); }
+    const chooser=S.turn, vl=[...victims];
+    if(isBot(chooser)){ doSteal(botChooseStealVictim(vl)); }
+    else if(isLocalPlayer(chooser)){ showStealModal(vl); }
     else{
-      S.pending={kind:'steal', chooser:chooser, victims:[...victims]};
+      S.pending={kind:'steal', chooser:chooser, victims:vl};
       setHint(`🕵️ Waiting for ${cur().name} to choose who to steal from…`);
     }
   }
@@ -744,6 +748,143 @@ function doSteal(vi){
   victim.res[r]--; cur().res[r]++;
   addLog(`🕵️ ${cur().name} stole 1 ${RES_ICON[r]} from ${victim.name}.`);
   setHint('Robber done. Build, trade, or end your turn.');
+}
+
+/* ================= Solo vs CPU bots (local practice mode) ================= */
+const BOT={busy:false,turn:-1,n:0};
+function isBot(i){ return !!(S&&S.bots&&S.bots[i]); }
+function pips(n){ return n<=7?n-1:13-n; }
+function vertexScore(v){
+  let s=0; const seen=new Set();
+  v.hexes.forEach(hid=>{ const h=S.hexes[hid];
+    if(h.number!=null){ s+=pips(h.number); const r=TERRAIN[h.terrain].res; if(r&&!seen.has(r)){ s+=1.5; seen.add(r); } } });
+  if(S.ports&&S.ports.some(pt=>pt.vertex===v.key)) s+=4; // port bonus
+  return s;
+}
+function bestSetupVertex(i){
+  let best=null,bs=-1;
+  for(const k in S.vertices){ const v=S.vertices[k];
+    if(!setupVertexValid(v,i)) continue;
+    const s=vertexScore(v);
+    if(s>bs){ bs=s; best=k; } }
+  return best;
+}
+function bestSettleVertex(i){
+  let best=null,bs=-1;
+  for(const k in S.vertices){ const v=S.vertices[k];
+    if(!settleValid(v,i)) continue;
+    const s=vertexScore(v);
+    if(s>bs){ bs=s; best=k; } }
+  return best;
+}
+function bestRoadEdge(i){
+  let best=null,bs=-1;
+  for(const ek in S.edges){ const e=S.edges[ek];
+    if(!roadValid(e,i)) continue;
+    let s=0;
+    [e.a,e.b].forEach(vk=>{ const v=S.vertices[vk]; if(v.owner===-1) s=Math.max(s,vertexScore(v)); });
+    if(s>bs){ bs=s; best=ek; } }
+  return best;
+}
+function bestSetupRoad(i){
+  let best=null,bs=-1;
+  for(const ek in S.edges){ const e=S.edges[ek];
+    if(e.owner!==-1) continue;
+    if(!(e.a===S.setupVertex||e.b===S.setupVertex)) continue;
+    const other=e.a===S.setupVertex?e.b:e.a;
+    const s=vertexScore(S.vertices[other]);
+    if(s>bs){ bs=s; best=ek; } }
+  return best;
+}
+function botBankTrade(i){
+  // trade with the bank when exactly one resource is missing for a build
+  const p=S.players[i];
+  for(const cost of [COSTS.settlement,COSTS.city,COSTS.road]){
+    const missing=Object.keys(cost).filter(r=>p.res[r]<cost[r]);
+    if(missing.length===1){
+      const need=missing[0];
+      for(const r of RES){
+        if(r===need) continue;
+        if(p.res[r]>=portRate(i,r)) return {give:r,get:need};
+      }
+    }
+  }
+  return null;
+}
+function botTryBuild(i){
+  const p=S.players[i];
+  if(canAfford(p,COSTS.city)){
+    for(const k in S.vertices){ const v=S.vertices[k];
+      if(v.owner===i&&v.kind==='settlement'){ hostApplyAct(i,{kind:'place',what:'city',key:k}); return true; } }
+  }
+  if(canAfford(p,COSTS.settlement)){
+    const vk=bestSettleVertex(i);
+    if(vk){ hostApplyAct(i,{kind:'place',what:'settlement',key:vk}); return true; }
+  }
+  if(canAfford(p,COSTS.road)){
+    const ek=bestRoadEdge(i);
+    if(ek){ hostApplyAct(i,{kind:'place',what:'road',key:ek}); return true; }
+  }
+  const bt=botBankTrade(i);
+  if(bt){ hostApplyAct(i,{kind:'bankTrade',give:bt.give,get:bt.get}); return true; }
+  return false;
+}
+function botAutoDiscard(dq){
+  const p=S.players[dq.player];
+  const hand=[]; RES.forEach(r=>{ for(let i=0;i<p.res[r];i++) hand.push(r); });
+  shuffle(hand);
+  const chosen={wood:0,brick:0,sheep:0,wheat:0,ore:0};
+  for(let i=0;i<dq.must&&i<hand.length;i++) chosen[hand[i]]++;
+  RES.forEach(r=>{ p.res[r]-=chosen[r]; });
+  addLog(`🕵️ ${p.name} discarded ${dq.must} cards.`);
+  S.discardQueue.shift(); S.pending=null;
+  processDiscard();
+}
+function botChooseRobberHex(i){
+  let best=null,bs=-1;
+  S.hexes.forEach(h=>{
+    if(h.id===S.robberHex||h.number==null) return;
+    let mine=false, s=pips(h.number);
+    for(const k in S.vertices){ const v=S.vertices[k];
+      if(v.hexes.includes(h.id)&&v.owner>=0){
+        if(v.owner===i) mine=true; else s+=vp(S.players[v.owner])*0.5;
+      } }
+    if(mine) s*=0.2;
+    if(s>bs){ bs=s; best=h.id; } });
+  return best;
+}
+function botChooseStealVictim(victims){
+  let bi=victims[0],bc=-1;
+  victims.forEach(vi=>{ const c=totalCards(S.players[vi]); if(c>bc){ bc=c; bi=vi; } });
+  return bi;
+}
+function botStep(i){
+  if(!S||S.turn!==i||!isBot(i)||S.phase==='gameover') return;
+  if(BOT.n>24){ // safety cap: never stall the game
+    if(S.phase==='play'&&S.rolled&&!S.pending&&S.mode!=='moveRobber') hostApplyAct(i,{kind:'endTurn'});
+    return;
+  }
+  if(S.phase==='setup'){
+    if(S.mode==='setupSettlement'){ const vk=bestSetupVertex(i); if(vk) hostApplyAct(i,{kind:'setupSettlement',key:vk}); }
+    else if(S.mode==='setupRoad'){ const ek=bestSetupRoad(i); if(ek) hostApplyAct(i,{kind:'setupRoad',key:ek}); }
+    return;
+  }
+  if(S.phase!=='play') return;
+  if(S.mode==='moveRobber'){ const h=botChooseRobberHex(i); if(h!=null) hostApplyAct(i,{kind:'moveRobber',hex:h}); return; }
+  if(!S.rolled){ hostApplyAct(i,{kind:'roll'}); return; }
+  if(botTryBuild(i)) return;
+  hostApplyAct(i,{kind:'endTurn'});
+}
+function maybeBot(){
+  if(!S||NET.mode!=='local'||S.phase==='gameover'||BOT.busy) return;
+  const i=S.turn;
+  if(!isBot(i)) return;
+  if(S.pending) return; // a human prompt is open (e.g. human discard)
+  if(BOT.turn!==i){ BOT.turn=i; BOT.n=0; }
+  BOT.busy=true;
+  setHint(`🤖 ${S.players[i].name} is thinking…`);
+  if(typeof document!=='undefined') refresh();
+  setTimeout(()=>{ BOT.busy=false; BOT.n++; botStep(i); },700);
 }
 
 /* ================= Longest road & win (host-side) ================= */
@@ -801,29 +942,29 @@ function sendOrDo(a){
 }
 function uiRoll(){
   if(!S||S.phase!=='play'||S.rolled) return;
-  if(!canActAs(S.turn)) return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'roll'});
 }
 function uiEndTurn(){
   if(!S||S.phase!=='play'||!S.rolled) return;
-  if(!canActAs(S.turn)) return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'endTurn'});
-  if(NET.mode==='local') showPassDevice();
+  if(NET.mode==='local'&&!isBot(S.turn)) showPassDevice();
 }
 function uiVertexClick(k){
-  if(!S||!canActAs(S.turn)) return;
+  if(!S||!canActAs(S.turn)||isBot(S.turn)) return;
   if(S.mode==='setupSettlement'){ sendOrDo({kind:'setupSettlement', key:k}); }
   else if(S.mode==='buildSettlement'){ sendOrDo({kind:'place', what:'settlement', key:k}); }
   else if(S.mode==='buildCity'){ sendOrDo({kind:'place', what:'city', key:k}); }
 }
 function uiEdgeClick(k){
-  if(!S||!canActAs(S.turn)) return;
+  if(!S||!canActAs(S.turn)||isBot(S.turn)) return;
   if(S.mode==='setupRoad'){ sendOrDo({kind:'setupRoad', key:k}); }
   else if(S.mode==='buildRoad'){ sendOrDo({kind:'place', what:'road', key:k}); }
 }
 function uiHexClick(id){
   if(!S||S.mode!=='moveRobber'||id===S.robberHex) return;
-  if(!canActAs(S.turn)) return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'moveRobber', hex:id});
 }
 function effMode(){
@@ -833,7 +974,7 @@ function effMode(){
 }
 function uiSetBuildMode(m){
   if(!S||S.phase!=='play') return;
-  if(!canActAs(S.turn)) return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
   if(NET.mode==='online'&&!NET.isHost){
     NET.localMode=(NET.localMode===m)?null:m;
   }else{
@@ -850,7 +991,7 @@ function uiSetBuildMode(m){
 }
 // NOTE: in online mode S.mode is synced from host; placement intents carry the explicit 'what'.
 function onVertexTap(k){
-  if(!S) return;
+  if(!S||isBot(S.turn)) return;
   const em=effMode();
   if(NET.mode==='online'&&!NET.isHost){
     if(S.mode==='setupSettlement') uiVertexClick(k);
@@ -861,7 +1002,7 @@ function onVertexTap(k){
   uiVertexClick(k);
 }
 function onEdgeTap(k){
-  if(!S) return;
+  if(!S||isBot(S.turn)) return;
   if(NET.mode==='online'&&!NET.isHost){
     if(S.mode==='setupRoad') uiEdgeClick(k);
     else if(effMode()==='buildRoad'){ NET.localMode=null; sendOrDo({kind:'place', what:'road', key:k}); }
@@ -1054,6 +1195,7 @@ function showRules(){
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
+    <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
     <li>📱 <b>App:</b> use your browser's "Add to Home Screen" to launch Family Catan like an app — it even works offline.</li>
     <li>🔍 <b>Zoom:</b> pinch the board to zoom in, drag to pan, double-tap to reset. Everything stays tappable.</li>
@@ -1262,7 +1404,7 @@ function renderStandings(){
   S.players.forEach((p,i)=>{
     const c=document.createElement('div');
     c.className='pchip'+(i===S.turn&&S.phase!=='gameover'?' active':'')+(p.dc?' dc':'')+((NET.mode==='online'&&i===NET.myIdx)?' me':'');
-    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}${p.dc?' ⚠️':''}`;
+    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${isBot(i)?'🤖 ':''}${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}${p.dc?' ⚠️':''}`;
     d.appendChild(c);
   });
 }
@@ -1295,7 +1437,7 @@ function refresh(){
       $('turnText').textContent=mine?'🎯 Your turn, '+p.name:p.name+"'s turn";
     }
   }
-  const mine=canActAs(S.turn);
+  const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
   $('endTurnBtn').disabled=!(interactive&&S.rolled);
@@ -1325,6 +1467,7 @@ function showMenu(){
     <p>2–4 players. Build, trade, race to 10 points!</p>
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
     <div class="btnrow">
+      <button class="btn" id="mSolo">🤖 Solo vs CPU</button>
       <button class="btn" id="mLocal">🎮 Same device</button>
       <button class="btn primary" id="mHost">🌐 Create online room</button>
     </div>
@@ -1338,6 +1481,33 @@ function showMenu(){
     closeOverlay();
     NET.mode='local'; NET.myIdx=0;
     showLocalSetup();
+  };
+  ov.querySelector('#mSolo').onclick=()=>{
+    const nm=name();
+    closeOverlay();
+    const s2=overlay(`<h2>🤖 Solo vs Computer</h2>
+      <p>You play as <b>${escapeHtml(nm)}</b>. How many computer opponents?</p>
+      <div class="btnrow" id="botPick">
+        <button class="btn" data-n="1">1</button>
+        <button class="btn primary" data-n="2">2</button>
+        <button class="btn" data-n="3">3</button>
+      </div>
+      <div class="btnrow"><button class="btn" id="soloBack">← Back</button></div>`);
+    const startSolo=(bn)=>{
+      closeOverlay();
+      NET.mode='local'; NET.myIdx=0;
+      const names=[nm], bots=[false];
+      for(let k=1;k<=bn;k++){ names.push('CPU '+k); bots.push(true); }
+      newGame(names,bots);
+      setNetStatus('solo vs CPU','on');
+      setHint(`${escapeHtml(nm)}: tap a highlighted spot for your settlement.`);
+      refresh();
+    };
+    s2.querySelector('#botPick').addEventListener('click',e=>{
+      const b=e.target.closest('button'); if(!b) return;
+      startSolo(+b.dataset.n);
+    });
+    s2.querySelector('#soloBack').onclick=()=>{ closeOverlay(); showMenu(); };
   };
   ov.querySelector('#mHost').onclick=async()=>{
     const err=ov.querySelector('#menuErr');
@@ -1438,8 +1608,8 @@ function boot(){
   $('buildRoad').onclick=()=>uiSetBuildMode('buildRoad');
   $('buildSettle').onclick=()=>uiSetBuildMode('buildSettlement');
   $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
-  $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&S.phase==='play') bankTradeUI(); };
-  $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&S.phase==='play') offerTradeUI(); };
+  $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
+  $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('rulesBtn').onclick=showRules;
   $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) location.reload(); };
   $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
