@@ -47,8 +47,8 @@
   #board .hex polygon { filter: drop-shadow(0 3px 3px rgba(0,0,0,.35)); }
   #panel {
     flex: 0 0 300px; background: linear-gradient(180deg, #fffdf6, var(--panel));
-    border-radius: 16px; padding: 14px;
-    display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow-y: auto;
+    border-radius: 16px; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto;
     box-shadow: 0 4px 14px rgba(0,0,0,.35); border: 1px solid #e8dcc0;
   }
   @media (max-width: 760px) and (orientation: portrait) {
@@ -61,7 +61,6 @@
     #boardWrap { height: 94vh; }
     #board { width: 100%; height: 100%; max-height: none; }
     #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; }
-    #buildBtns { grid-template-columns: repeat(3, 1fr); }
     #zoomHint { display: none; }
     .btn { padding: 8px 10px; font-size: .88rem; }
   }
@@ -83,10 +82,10 @@
     background: linear-gradient(180deg, #fffdf6, #f7f1de);
     border: 1px solid #e8dcc0;
     border-radius: 14px;
-    padding: 10px 12px;
+    padding: 8px 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,.18);
   }
-  .card > strong { display: block; margin-bottom: 8px; font-size: .95rem; }
+  .card > strong { display: block; margin-bottom: 6px; font-size: .92rem; }
   @keyframes turnGlow {
     0%, 100% { box-shadow: 0 3px 0 #7c271e, 0 0 0 0 rgba(211,84,80,.55); }
     50% { box-shadow: 0 3px 0 #7c271e, 0 0 0 12px rgba(211,84,80,0); }
@@ -108,8 +107,8 @@
     box-shadow: 0 2px 4px rgba(0,0,0,.08);
   }
   .res small { display: block; font-weight: 600; font-size: .68rem; color: #8a7a55; }
-  #buildBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  #buildBtns .btn { font-size: .82rem; padding: 8px 6px; line-height: 1.35; }
+  #buildBtns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #buildBtns .btn { font-size: .78rem; padding: 8px 4px; line-height: 1.35; }
   #log {
     background: #fffdf6; border: 1px solid #e0d5b5; border-radius: 10px; padding: 8px;
     font-size: .8rem; max-height: 160px; overflow-y: auto;
@@ -174,6 +173,7 @@
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
   #devHand { display: flex; flex-wrap: wrap; gap: 6px; }
+  #devHand:not(:empty) { margin-top: 8px; }
   #devHand .res { position: relative; }
   #zoomHint {
     position: absolute; bottom: 8px; right: 10px; z-index: 5;
@@ -200,16 +200,13 @@
         <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
         <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
         <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
-      </div></div>
+        <button class="btn" id="buyDevBtn">🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small></button>
+      </div><div id="devHand"></div></div>
       <div class="card"><strong>Trade</strong>
         <div class="btnrow">
           <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
           <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
         </div>
-      </div>
-      <div class="card"><strong>🧙 Dev Cards</strong>
-        <div class="btnrow"><button class="btn" id="buyDevBtn">🧙 Buy Card<br><small>1🌾 1🐑 1⛰️</small></button></div>
-        <div id="devHand"></div>
       </div>
       <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
       <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
@@ -1601,7 +1598,7 @@ function renderDev(){
   });
   const left=S.devDeck?S.devDeck.length:0;
   const buy=$('buyDevBtn');
-  if(buy) buy.innerHTML=`🧙 Buy Card<br><small>1🌾 1🐑 1⛰️ · ${left} left</small>`;
+  if(buy){ buy.innerHTML=`🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small>`; buy.title=left+' cards left in deck'; }
 }
 function playDevCard(t){
   if(!S||S.phase!=='play') return;
