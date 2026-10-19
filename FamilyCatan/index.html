@@ -46,7 +46,7 @@
   #board { width: 100%; height: auto; max-height: 62vh; }
   #board .hex polygon { filter: drop-shadow(0 3px 3px rgba(0,0,0,.35)); }
   #panel {
-    flex: 0 0 300px; background: linear-gradient(180deg, #fffdf6, var(--panel));
+    flex: 0 0 340px; background: linear-gradient(180deg, #fffdf6, var(--panel));
     border-radius: 16px; padding: 12px;
     display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto;
     box-shadow: 0 4px 14px rgba(0,0,0,.35); border: 1px solid #e8dcc0;
@@ -185,6 +185,20 @@
     width: 46px; height: 46px; border-radius: 50%; padding: 0;
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
+  #timerWrap {
+    position: absolute; top: 0; left: 0; right: 0; height: 26px; z-index: 6;
+    pointer-events: none; display: none;
+  }
+  #timerBar {
+    position: absolute; top: 0; left: 0; height: 6px; width: 100%;
+    background: linear-gradient(90deg, #f1c40f, #e67e22);
+    border-radius: 0 0 6px 0;
+  }
+  #timerText {
+    position: absolute; top: 9px; left: 12px;
+    font-size: .78rem; font-weight: 800; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.65);
+  }
   #devHand { display: flex; flex-wrap: wrap; gap: 6px; }
   #devHand:not(:empty) { margin-top: 8px; }
   #devHand .res { position: relative; }
@@ -202,6 +216,7 @@
       <div id="rollBadge" style="display:none"></div>
       <div id="zoomHint">pinch to zoom · double-tap to reset</div>
       <button class="btn" id="restartBtn" title="Restart game">🔄</button>
+      <div id="timerWrap"><div id="timerBar"></div><span id="timerText"></span></div>
     </div>
     <div id="panel">
       <div id="offerBox"></div>
@@ -216,7 +231,6 @@
         </div>
         <div class="pcard"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
         <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
-        <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
         <div id="logWrap" style="display:none"><div id="log"></div></div>
       </div>
       <div class="tabpane" id="pane-build">
@@ -1060,6 +1074,41 @@ function doEndTurn(){
   addLog(`➡️ ${cur().name}'s turn.`);
 }
 
+/* ================= Turn timer (60s, auto-pass) ================= */
+const TURN_SECONDS=60;
+let timerDeadline=0, timerTurnKey='';
+function timerActive(){
+  return S&&S.phase==='play'&&!isBot(S.turn)&&!S.pending&&S.mode!=='moveRobber';
+}
+function resetTimer(){
+  timerTurnKey=S.turn+':'+S.phase;
+  timerDeadline=Date.now()+TURN_SECONDS*1000;
+}
+function onTurnTimeout(){
+  // only the authority auto-passes: local page, or online host
+  const authority=NET.mode==='local'||(NET.mode==='online'&&NET.isHost);
+  if(!authority) return;
+  if(S.phase!=='play'||isBot(S.turn)||S.pending||S.mode==='moveRobber') return;
+  const idx=S.turn;
+  if(!S.rolled) hostApplyAct(idx,{kind:'roll'});
+  if(S.pending||S.mode==='moveRobber'){ resetTimer(); return; } // roll opened a 7-flow; give fresh time
+  addLog(`⏱️ ${S.players[idx].name} ran out of time — turn passed.`);
+  hostApplyAct(idx,{kind:'endTurn'});
+}
+function tickTimer(){
+  if(typeof document==='undefined') return;
+  const wrap=$('timerWrap');
+  if(!wrap||!S) return;
+  const key=S.turn+':'+S.phase;
+  if(key!==timerTurnKey) resetTimer();
+  if(!timerActive()){ wrap.style.display='none'; return; }
+  const msLeft=timerDeadline-Date.now();
+  if(msLeft<=0){ wrap.style.display='none'; onTurnTimeout(); return; }
+  wrap.style.display='block';
+  $('timerBar').style.width=(msLeft/(TURN_SECONDS*1000)*100)+'%';
+  $('timerText').textContent=Math.ceil(msLeft/1000)+'s';
+}
+
 /* ================= UI event handlers ================= */
 function sendOrDo(a){
   if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:a}); return; }
@@ -1387,6 +1436,7 @@ function showRules(){
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
+    <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — run out of time and the game rolls (if you haven't) and passes your turn automatically.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
@@ -1849,11 +1899,11 @@ function boot(){
   $('buyDevBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
-  $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
   window.addEventListener('pagehide', saveGame);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') saveGame(); });
+  setInterval(tickTimer, 500);
   setNetStatus('offline','');
   showMenu();
 }
