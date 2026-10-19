@@ -102,8 +102,7 @@
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
-  #dice { font-size: 2.4rem; }
-  #dice.rolling { animation: shake .35s ease; }
+  #rollBadge.rolling { animation: shake .3s ease infinite; }
   @keyframes shake {
     0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
     50% { transform: rotate(14deg) scale(1.1); } 75% { transform: rotate(-8deg); }
@@ -209,17 +208,18 @@
       <div id="offerBox"></div>
       <div id="diceArea">
         <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
-        <div id="dice">🎲🎲</div>
       </div>
       <div><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
       <div><strong>Build</strong><div id="buildBtns">
         <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
         <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
         <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
-        <button class="btn" id="bankTradeBtn">🔄 Bank Trade</button>
       </div></div>
-      <div><strong>Trade with players</strong>
-        <div class="btnrow"><button class="btn" id="offerTradeBtn">🤝 Make Offer</button></div>
+      <div><strong>Trade</strong>
+        <div class="btnrow">
+          <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
+          <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
+        </div>
       </div>
       <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
       <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
@@ -321,6 +321,7 @@ function portRate(pi,res){
 /* ================= Game state ================= */
 let S=null;
 function newGame(playerNames,botFlags){
+  clearSave();
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
@@ -358,6 +359,44 @@ function addLog(msg){
   S.log.unshift(msg);
   if(S.log.length>40) S.log.pop();
   if(typeof document!=='undefined') renderLog();
+}
+
+/* ================= Save / resume (survives app switching) ================= */
+const SAVE_KEY='familycatan-save-v1';
+function saveGame(){
+  if(typeof localStorage==='undefined'||!S) return;
+  if(S.phase==='gameover'){ clearSave(); return; }
+  if(NET.mode==='online'&&NET.isHost) return; // host room dies with the page
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      v:1, savedAt:Date.now(), S:serializeState(),
+      net:{mode:NET.mode, isHost:!!NET.isHost, myIdx:NET.myIdx, myName:NET.myName, code:NET.code}
+    }));
+  }catch(e){}
+}
+function loadSave(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    const d=JSON.parse(raw);
+    if(!d||d.v!==1||!d.S||!d.S.players||!d.S.players.length) return null;
+    if(Date.now()-d.savedAt>24*3600*1000) return null;
+    return d;
+  }catch(e){ return null; }
+}
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function resumeLocal(save){
+  closeOverlay();
+  S=save.S;
+  NET.mode='local'; NET.myIdx=0; NET.isHost=false;
+  NET.myName=(save.net&&save.net.myName)||'Player';
+  NET.code=null; NET.started=true; NET.lobbyPlayers=[];
+  BOT.busy=false; BOT.turn=-1; BOT.n=0;
+  shownPrompt=null;
+  setNetStatus('resumed','on');
+  if(S.discardQueue&&S.discardQueue.length){ processDiscard(); }
+  setHint('Welcome back — continue your game.');
+  refresh(); renderPrompts(); maybeBot();
 }
 
 /* ================= Network layer ================= */
@@ -454,7 +493,7 @@ function broadcastLobby(){
 }
 
 /* ---- Guest: join room ---- */
-function joinRoom(code,name){
+function joinRoom(code,name,isRejoin){
   return new Promise((resolve,reject)=>{
     if(typeof Peer==='undefined'){ reject(new Error('network lib failed to load')); return; }
     code=code.trim().toUpperCase();
@@ -463,7 +502,7 @@ function joinRoom(code,name){
     peer.on('open',()=>{
       const conn=peer.connect(PEER_PREFIX+code, {reliable:true});
       NET.hostConn=conn;
-      conn.on('open',()=>{ conn.send({t:'join', name:name}); });
+      conn.on('open',()=>{ conn.send({t:isRejoin?'rejoin':'join', name:name}); });
       conn.on('data',data=>guestOnData(data,resolve,reject,code));
       conn.on('close',()=>guestOnHostClose());
       conn.on('error',()=>{});
@@ -499,6 +538,7 @@ function onRemoteState(s){
   closeLobbyIfOpen();
   refresh();
   renderPrompts();
+  saveGame();
 }
 function showEnded(reason){
   overlay(`<h2>🔌 Game Over</h2><p>${escapeHtml(reason)}</p>
@@ -634,6 +674,7 @@ function afterChange(){
   updateLongest(); checkWin();
   if(NET.mode==='online'&&NET.isHost){ netSync(); }
   refresh(); renderPrompts();
+  saveGame();
   maybeBot();
 }
 
@@ -1023,14 +1064,22 @@ function overlay(html){
 }
 function closeOverlay(){ $('overlayRoot').innerHTML=''; }
 function animateDice(d1,d2){
+  // rolling animation on the top badge, then settles on the final faces + total
   if(typeof document==='undefined') return;
-  const faces='⚀⚁⚂⚃⚄⚅', diceEl=$('dice');
-  if(!diceEl) return;
-  diceEl.classList.add('rolling');
+  const faces='⚀⚁⚂⚃⚄⚅', badge=$('rollBadge');
+  if(!badge) return;
+  badge.style.display='flex';
+  badge.classList.add('rolling');
   let ticks=0;
   const iv=setInterval(()=>{
-    diceEl.textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
-    if(++ticks>=4){ clearInterval(iv); diceEl.textContent=faces[d1-1]+faces[d2-1]; diceEl.classList.remove('rolling'); }
+    badge.querySelector('.faces').textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
+    $('rollTotal').textContent='= '+(2+Math.floor(Math.random()*11));
+    if(++ticks>=7){
+      clearInterval(iv);
+      badge.querySelector('.faces').textContent=faces[d1-1]+faces[d2-1];
+      $('rollTotal').textContent='= '+(d1+d2);
+      badge.classList.remove('rolling');
+    }
   },90);
 }
 let shownPrompt=null;
@@ -1199,6 +1248,7 @@ function showRules(){
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
     <li>📱 <b>App:</b> use your browser's "Add to Home Screen" to launch Family Catan like an app — it even works offline.</li>
     <li>🔍 <b>Zoom:</b> pinch the board to zoom in, drag to pan, double-tap to reset. Everything stays tappable.</li>
+    <li>💾 <b>Auto-save:</b> your game is saved automatically — switch apps and come back, then resume from the menu.</li>
   </ul>
   <div class="btnrow"><button class="btn primary" id="rulesOk">Got it!</button></div>`)
   .querySelector('#rulesOk').onclick=closeOverlay;
@@ -1445,9 +1495,6 @@ function refresh(){
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
   $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
   $('offerTradeBtn').disabled=!canBuild;
-  // dice faces from state
-  const diceEl=$('dice');
-  if(diceEl&&S.dice) diceEl.textContent='⚀⚁⚂⚃⚄⚅'[S.dice[0]-1]+'⚀⚁⚂⚃⚄⚅'[S.dice[1]-1];
   // rolled-number badge next to the board
   const badge=$('rollBadge');
   if(badge){
@@ -1463,8 +1510,18 @@ function refresh(){
 
 /* ================= Menu & lobby ================= */
 function showMenu(){
+  const save=loadSave();
+  let resumeHtml='';
+  if(save){
+    if(save.net.mode==='local'){
+      resumeHtml=`<div class="btnrow"><button class="btn green" id="mResume">▶ Resume last game (${save.S.players.length}P)</button></div>`;
+    }else if(save.net.mode==='online'&&!save.net.isHost&&save.net.code){
+      resumeHtml=`<div class="btnrow"><button class="btn green" id="mRejoin">🔄 Rejoin room ${escapeHtml(save.net.code)}</button></div>`;
+    }
+  }
   const ov=overlay(`<h2>🏝️ Family Catan</h2>
     <p>2–4 players. Build, trade, race to 10 points!</p>
+    ${resumeHtml}
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
     <div class="btnrow">
       <button class="btn" id="mSolo">🤖 Solo vs CPU</button>
@@ -1477,6 +1534,18 @@ function showMenu(){
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
+  const mr=ov.querySelector('#mResume');
+  if(mr) mr.onclick=()=>resumeLocal(save);
+  const rj=ov.querySelector('#mRejoin');
+  if(rj) rj.onclick=async()=>{
+    const err=ov.querySelector('#menuErr');
+    err.textContent='Rejoining…';
+    try{
+      NET.mode='online';
+      await joinRoom(save.net.code, save.net.myName||'Player', true);
+      closeOverlay();
+    }catch(e){ err.textContent=e.message; NET.mode=null; setNetStatus('offline','off'); }
+  };
   ov.querySelector('#mLocal').onclick=()=>{
     closeOverlay();
     NET.mode='local'; NET.myIdx=0;
@@ -1611,10 +1680,12 @@ function boot(){
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('rulesBtn').onclick=showRules;
-  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) location.reload(); };
+  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  window.addEventListener('pagehide', saveGame);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') saveGame(); });
   setNetStatus('offline','');
   showMenu();
 }
