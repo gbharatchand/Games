@@ -60,7 +60,16 @@
     #app { gap: 6px; padding: 6px; }
     #boardWrap { height: 94vh; }
     #board { width: 100%; height: 100%; max-height: none; }
-    #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; }
+    #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; overflow-y: visible; }
+    #tabBar { display: flex; gap: 6px; flex-shrink: 0; }
+    .tabbtn {
+      flex: 1; border: 2px solid #d8cba4; background: #efe8d2; border-radius: 10px;
+      padding: 8px 4px; font-size: .85rem; font-weight: 700; cursor: pointer; color: var(--ink);
+    }
+    .tabbtn.active { background: linear-gradient(180deg,#ffffff,#f7f1de); border-color: var(--gold); box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+    .tabbtn.notify { animation: turnGlow 1.6s ease-in-out infinite; border-color: #d35450; }
+    .tabpane { display: none; }
+    .tabpane.active { display: flex; flex-direction: column; gap: 8px; }
     #zoomHint { display: none; }
     .btn { padding: 8px 10px; font-size: .88rem; }
   }
@@ -78,6 +87,10 @@
   .btn.green { background: linear-gradient(180deg, #3bc47a, #27ae60); border-color: #1e8449; color: #fff; box-shadow: 0 3px 0 #186a38, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .btn.green:active { box-shadow: 0 1px 0 #186a38; }
   .btn.cant { opacity: .45; }
+  #tabBar { display: none; }
+  .tabpane { display: contents; }
+  #offerBox:empty { display: none; }
+  .card, .btnrow, #diceArea { flex-shrink: 0; }
   .card {
     background: linear-gradient(180deg, #fffdf6, #f7f1de);
     border: 1px solid #e8dcc0;
@@ -192,25 +205,36 @@
     </div>
     <div id="panel">
       <div id="offerBox"></div>
-      <div id="diceArea">
-        <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
+      <div id="tabBar">
+        <button class="tabbtn active" data-tab="play">🎲 Play</button>
+        <button class="tabbtn" data-tab="build">🔨 Build</button>
+        <button class="tabbtn" data-tab="trade">🔄 Trade</button>
       </div>
-      <div class="card"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
-      <div class="card"><strong>Build</strong><div id="buildBtns">
-        <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
-        <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
-        <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
-        <button class="btn" id="buyDevBtn">🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small></button>
-      </div><div id="devHand"></div></div>
-      <div class="card"><strong>Trade</strong>
-        <div class="btnrow">
-          <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
-          <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
+      <div class="tabpane active" id="pane-play">
+        <div id="diceArea">
+          <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
+        </div>
+        <div class="card"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
+        <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
+        <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
+        <div id="logWrap" style="display:none"><div id="log"></div></div>
+      </div>
+      <div class="tabpane" id="pane-build">
+        <div class="card"><strong>Build</strong><div id="buildBtns">
+          <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
+          <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
+          <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
+          <button class="btn" id="buyDevBtn">🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small></button>
+        </div><div id="devHand"></div></div>
+      </div>
+      <div class="tabpane" id="pane-trade">
+        <div class="card"><strong>Trade</strong>
+          <div class="btnrow">
+            <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
+            <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
+          </div>
         </div>
       </div>
-      <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
-      <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
-      <div id="logWrap" style="display:none"><div id="log"></div></div>
     </div>
   </div>
 </div>
@@ -1617,6 +1641,8 @@ function refresh(){
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
   $('rollBtn').classList.toggle('turn-glow', interactive&&!S.rolled);
+  const playTab=document.querySelector('.tabbtn[data-tab="play"]');
+  if(playTab) playTab.classList.toggle('notify', interactive&&!S.rolled&&uiTab!=='play');
   $('endTurnBtn').disabled=!(interactive&&S.rolled);
   const canBuild=interactive&&S.mode!=='moveRobber';
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
@@ -1805,6 +1831,13 @@ function closeLobbyIfOpen(){
 }
 
 /* ================= Boot ================= */
+let uiTab='play';
+function setTab(t){
+  uiTab=t;
+  if(typeof document==='undefined') return;
+  document.querySelectorAll('.tabbtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+t));
+}
 function boot(){
   $('rollBtn').onclick=uiRoll;
   $('endTurnBtn').onclick=uiEndTurn;
@@ -1815,6 +1848,7 @@ function boot(){
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('buyDevBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
+  document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
