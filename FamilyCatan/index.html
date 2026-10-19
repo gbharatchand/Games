@@ -61,6 +61,7 @@
     #boardWrap { height: 94vh; }
     #board { width: 100%; height: 100%; max-height: none; }
     #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; }
+    #buildBtns { grid-template-columns: repeat(3, 1fr); }
     #zoomHint { display: none; }
     .btn { padding: 8px 10px; font-size: .88rem; }
   }
@@ -77,10 +78,11 @@
   .btn.primary:active { box-shadow: 0 1px 0 #7c271e; }
   .btn.green { background: linear-gradient(180deg, #3bc47a, #27ae60); border-color: #1e8449; color: #fff; box-shadow: 0 3px 0 #186a38, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .btn.green:active { box-shadow: 0 1px 0 #186a38; }
+  .btn.cant { opacity: .45; }
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
-  #rollBtn { font-size: 1.25rem; padding: 15px 24px; }
+  #rollBtn { font-size: 1.45rem; padding: 17px 24px; width: 100%; }
   #rollBadge.rolling { animation: shake .3s ease infinite; }
   @keyframes shake {
     0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
@@ -151,11 +153,8 @@
   #boardWrap { position: relative; touch-action: none; overflow: hidden; }
   #rollBadge {
     position: absolute; top: 10px; left: 10px; z-index: 5;
-    font-weight: 800; font-size: 1.4rem; color: #fff;
-    text-shadow: 0 2px 6px rgba(0,0,0,.6);
     display: flex; align-items: center; gap: 10px; pointer-events: none;
   }
-  #rollBadge .faces { font-size: 2.1rem; }
   #restartBtn {
     position: absolute; top: 10px; right: 10px; z-index: 6;
     width: 46px; height: 46px; border-radius: 50%; padding: 0;
@@ -174,7 +173,7 @@
 <div id="app">
   <div id="main">
     <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg>
-      <div id="rollBadge" style="display:none"><span class="faces">🎲🎲</span><span id="rollTotal"></span></div>
+      <div id="rollBadge" style="display:none"></div>
       <div id="zoomHint">pinch to zoom · double-tap to reset</div>
       <button class="btn" id="restartBtn" title="Restart game">🔄</button>
     </div>
@@ -1114,21 +1113,42 @@ function overlay(html){
   root.appendChild(ov); return ov;
 }
 function closeOverlay(){ $('overlayRoot').innerHTML=''; }
+let diceUid=0;
+function diceSVG(v){
+  // 2.5D die: white face, black pips, soft drop shadow for depth
+  diceUid++;
+  const s=52, gid='dg'+diceUid, c=s/2, o=s*0.28, pr=Math.max(2.5,s*0.075);
+  const LAYOUTS={
+    1:[[0,0]],
+    2:[[-1,-1],[1,1]],
+    3:[[-1,-1],[0,0],[1,1]],
+    4:[[-1,-1],[1,-1],[-1,1],[1,1]],
+    5:[[-1,-1],[1,-1],[0,0],[-1,1],[1,1]],
+    6:[[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]],
+  };
+  const pips=(LAYOUTS[v]||[]).map(([dx,dy])=>
+    `<circle cx="${(c+dx*o).toFixed(1)}" cy="${(c+dy*o).toFixed(1)}" r="${pr.toFixed(1)}" fill="#1a1a1a"/>`
+  ).join('');
+  return `<svg width="${s}" height="${s+4}" viewBox="0 0 ${s} ${s+4}">`+
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`+
+    `<stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfcfcf"/></linearGradient></defs>`+
+    `<rect x="3" y="6" width="${s-6}" height="${s-6}" rx="9" fill="rgba(0,0,0,.30)"/>`+
+    `<rect x="3" y="3" width="${s-6}" height="${s-6}" rx="9" fill="url(#${gid})" stroke="#8a8a8a" stroke-width="1.5"/>`+
+    pips+`</svg>`;
+}
 function animateDice(d1,d2){
-  // rolling animation on the top badge, then settles on the final faces + total
+  // rolling animation on the top badge, then settles on the final dice
   if(typeof document==='undefined') return;
-  const faces='⚀⚁⚂⚃⚄⚅', badge=$('rollBadge');
+  const badge=$('rollBadge');
   if(!badge) return;
   badge.style.display='flex';
   badge.classList.add('rolling');
   let ticks=0;
   const iv=setInterval(()=>{
-    badge.querySelector('.faces').textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
-    $('rollTotal').textContent='= '+(2+Math.floor(Math.random()*11));
+    badge.innerHTML=diceSVG(1+Math.floor(Math.random()*6))+diceSVG(1+Math.floor(Math.random()*6));
     if(++ticks>=8){
       clearInterval(iv);
-      badge.querySelector('.faces').textContent=faces[d1-1]+faces[d2-1];
-      $('rollTotal').textContent='= '+(d1+d2);
+      badge.innerHTML=diceSVG(d1)+diceSVG(d2);
       badge.classList.remove('rolling');
     }
   },150);
@@ -1473,7 +1493,7 @@ function renderBoard(){
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
     corners.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
   });
-  const pad=70;
+  const pad=105;
   svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
@@ -1592,13 +1612,19 @@ function refresh(){
   $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
   $('offerTradeBtn').disabled=!canBuild;
   $('buyDevBtn').disabled=!(canBuild&&S.devDeck&&S.devDeck.length>0);
-  // rolled-number badge next to the board
+  // dim buttons the player can't afford (still tappable; applyAct validates)
+  const meRes=(NET.mode==='local'?cur():(S.players[NET.myIdx]||{res:{}})).res||{};
+  const afford=c=>Object.keys(c).every(r=>(meRes[r]||0)>=c[r]);
+  $('buildRoad').classList.toggle('cant',canBuild&&!afford(COSTS.road));
+  $('buildSettle').classList.toggle('cant',canBuild&&!afford(COSTS.settlement));
+  $('buildCity').classList.toggle('cant',canBuild&&!afford(COSTS.city));
+  $('buyDevBtn').classList.toggle('cant',canBuild&&!(S.devDeck&&S.devDeck.length&&afford(DEV_COST)));
+  // rolled dice badge next to the board
   const badge=$('rollBadge');
   if(badge){
     if(S.rolled&&S.dice&&S.phase==='play'){
       badge.style.display='flex';
-      badge.querySelector('.faces').textContent='⚀⚁⚂⚃⚄⚅'[S.dice[0]-1]+'⚀⚁⚂⚃⚄⚅'[S.dice[1]-1];
-      $('rollTotal').textContent='= '+(S.dice[0]+S.dice[1]);
+      if(!badge.classList.contains('rolling')) badge.innerHTML=diceSVG(S.dice[0])+diceSVG(S.dice[1]);
     }else{
       badge.style.display='none';
     }
