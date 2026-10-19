@@ -79,6 +79,11 @@
   .btn.green { background: linear-gradient(180deg, #3bc47a, #27ae60); border-color: #1e8449; color: #fff; box-shadow: 0 3px 0 #186a38, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .btn.green:active { box-shadow: 0 1px 0 #186a38; }
   .btn.cant { opacity: .45; }
+  @keyframes turnGlow {
+    0%, 100% { box-shadow: 0 3px 0 #7c271e, 0 0 0 0 rgba(211,84,80,.55); }
+    50% { box-shadow: 0 3px 0 #7c271e, 0 0 0 12px rgba(211,84,80,0); }
+  }
+  .btn.turn-glow { animation: turnGlow 1.6s ease-in-out infinite; }
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
@@ -1606,6 +1611,7 @@ function refresh(){
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
+  $('rollBtn').classList.toggle('turn-glow', interactive&&!S.rolled);
   $('endTurnBtn').disabled=!(interactive&&S.rolled);
   const canBuild=interactive&&S.mode!=='moveRobber';
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
