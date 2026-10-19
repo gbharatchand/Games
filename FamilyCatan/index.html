@@ -1063,19 +1063,31 @@ function showRules(){
 }
 
 /* ================= Rendering ================= */
+function shade(hex,f){
+  // darken/lighten a #rrggbb color by factor f (clamped)
+  const n=parseInt(hex.slice(1),16);
+  const c=v=>Math.max(0,Math.min(255,Math.round(v*f)));
+  return `rgb(${c((n>>16)&255)},${c((n>>8)&255)},${c(n&255)})`;
+}
 function drawHouse(g,x,y,w,color,cls,isCity){
-  // small house marker (settlement) / bigger house with chimney (city)
+  // 2.5D house marker: ground shadow, shaded body edge, two-tone roof
   const grp=el('g',{class:cls},g);
   const h=w*0.72, roofH=w*0.5, y0=y-h*0.08;
+  el('ellipse',{cx:x.toFixed(1), cy:(y+h*0.52).toFixed(1), rx:(w*0.62).toFixed(1), ry:(w*0.18).toFixed(1), fill:'rgba(0,0,0,.28)'},grp);
   el('rect',{x:(x-w/2).toFixed(1), y:y0.toFixed(1), width:w.toFixed(1), height:(h*0.58).toFixed(1),
     fill:color, stroke:'#222','stroke-width':2.5},grp);
-  el('polygon',{points:`${(x-w/2-2).toFixed(1)},${y0.toFixed(1)} ${(x+w/2+2).toFixed(1)},${y0.toFixed(1)} ${x.toFixed(1)},${(y0-roofH).toFixed(1)}`,
-    fill:color, stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
+  el('rect',{x:(x+w/2-w*0.22).toFixed(1), y:y0.toFixed(1), width:(w*0.22).toFixed(1), height:(h*0.58).toFixed(1),
+    fill:'rgba(0,0,0,.18)'},grp);
+  const apex=`${x.toFixed(1)},${(y0-roofH).toFixed(1)}`;
+  el('polygon',{points:`${(x-w/2-2).toFixed(1)},${y0.toFixed(1)} ${x.toFixed(1)},${y0.toFixed(1)} ${apex}`,
+    fill:shade(color,1.18), stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
+  el('polygon',{points:`${x.toFixed(1)},${y0.toFixed(1)} ${(x+w/2+2).toFixed(1)},${y0.toFixed(1)} ${apex}`,
+    fill:shade(color,0.78), stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
   el('rect',{x:(x-w*0.11).toFixed(1), y:(y0+h*0.58-h*0.3).toFixed(1), width:(w*0.22).toFixed(1), height:(h*0.3).toFixed(1),
     fill:'#5a3a20'},grp);
   if(isCity){
     el('rect',{x:(x+w*0.2).toFixed(1), y:(y0-roofH*0.85).toFixed(1), width:(w*0.13).toFixed(1), height:(roofH*0.55).toFixed(1),
-      fill:color, stroke:'#222','stroke-width':2},grp);
+      fill:shade(color,0.85), stroke:'#222','stroke-width':2},grp);
   }
 }
 function renderPorts(g){
@@ -1089,6 +1101,7 @@ function renderPorts(g){
       stroke:'rgba(255,255,255,.65)','stroke-width':3,'stroke-dasharray':'5 4'},g);
     const pg=el('g',{class:'port'},g);
     const owned=v.owner>=0;
+    el('circle',{cx:bx.toFixed(1),cy:(by+3).toFixed(1),r:20,fill:'rgba(0,0,0,.25)'},pg);
     el('circle',{cx:bx.toFixed(1),cy:by.toFixed(1),r:20,fill:'#fffdf6',
       stroke:owned?S.players[v.owner].color:'#d4a017','stroke-width':3},pg);
     const at=el('text',{x:bx.toFixed(1),y:(by-2).toFixed(1),'text-anchor':'middle','font-size':'15'},pg);
@@ -1184,11 +1197,16 @@ function renderBoard(){
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
     const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
     hg.addEventListener('click',()=>uiHexClick(h.id));
-    el('polygon',{points:corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' '), fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
+    // 2.5D: extruded tile base beneath the top face
+    const pts=corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+    const ptsD=corners.map(p=>p.x.toFixed(1)+','+(p.y+9).toFixed(1)).join(' ');
+    el('polygon',{points:ptsD, fill:shade(TERRAIN[h.terrain].color,0.55), stroke:'#0a2a18','stroke-width':2},hg);
+    el('polygon',{points:pts, fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
     const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
     t.textContent=TERRAIN[h.terrain].icon;
     if(h.number!==null){
       const hot=(h.number===6||h.number===8);
+      el('circle',{cx:c.x, cy:c.y+25, r:17, fill:'rgba(0,0,0,.25)'},hg);
       el('circle',{cx:c.x, cy:c.y+22, r:17, fill:'#f7f3e8', stroke:'#555','stroke-width':1.5},hg);
       const nt=el('text',{x:c.x, y:c.y+29, 'text-anchor':'middle','font-size':'20','font-weight':'bold', fill:hot?'#c0392b':'#222'},hg);
       nt.textContent=h.number;
