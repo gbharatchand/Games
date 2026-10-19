@@ -173,12 +173,11 @@
   #boardWrap { position: relative; touch-action: none; overflow: hidden; }
   #rollBadge {
     position: absolute; top: 10px; left: 10px; z-index: 5;
-    background: linear-gradient(180deg, #fffdf6, #f3ecd8);
-    border: 2px solid var(--gold); border-radius: 12px; padding: 6px 12px;
-    font-weight: 800; font-size: 1.05rem; box-shadow: 0 3px 8px rgba(0,0,0,.4);
-    display: flex; align-items: center; gap: 8px; pointer-events: none;
+    font-weight: 800; font-size: 1.4rem; color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,.6);
+    display: flex; align-items: center; gap: 10px; pointer-events: none;
   }
-  #rollBadge .faces { font-size: 1.5rem; }
+  #rollBadge .faces { font-size: 2.1rem; }
   #zoomHint {
     position: absolute; bottom: 8px; right: 10px; z-index: 5;
     font-size: .7rem; color: rgba(255,255,255,.65); pointer-events: none;
@@ -1074,13 +1073,13 @@ function animateDice(d1,d2){
   const iv=setInterval(()=>{
     badge.querySelector('.faces').textContent=faces[Math.floor(Math.random()*6)]+faces[Math.floor(Math.random()*6)];
     $('rollTotal').textContent='= '+(2+Math.floor(Math.random()*11));
-    if(++ticks>=7){
+    if(++ticks>=8){
       clearInterval(iv);
       badge.querySelector('.faces').textContent=faces[d1-1]+faces[d2-1];
       $('rollTotal').textContent='= '+(d1+d2);
       badge.classList.remove('rolling');
     }
-  },90);
+  },150);
 }
 let shownPrompt=null;
 function renderPrompts(){
