@@ -36,36 +36,6 @@
   }
   h1, h2, .btn { font-family: "Baloo 2", -apple-system, 'Segoe UI', sans-serif; }
   #app { width: 100%; max-width: 1100px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-  header {
-    background: linear-gradient(180deg, #fffdf6, var(--panel));
-    border-radius: 16px; padding: 10px 16px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-    box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 #fff;
-    border: 1px solid #e8dcc0;
-  }
-  header h1 { margin: 0; font-size: 1.4rem; letter-spacing: .5px; }
-  #netStatus { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 700; }
-  #netDot { width: 12px; height: 12px; border-radius: 50%; background: #999; }
-  #netDot.on { background: #27ae60; box-shadow: 0 0 6px #27ae60; }
-  #netDot.off { background: #e74c3c; }
-  #standings { display: flex; gap: 8px; flex-wrap: wrap; }
-  .pchip {
-    display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px;
-    background: #fff; border: 2px solid #d8cba4; font-size: .85rem; font-weight: 700;
-    box-shadow: 0 2px 4px rgba(0,0,0,.12);
-  }
-  .pchip .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #999; }
-  .pchip.active { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 2px 6px rgba(0,0,0,.2); }
-  .pchip.dc { opacity: .45; }
-  .pchip.me { border-style: dashed; }
-  #turnBanner {
-    background: linear-gradient(180deg, #fffdf6, var(--panel));
-    border-radius: 16px; padding: 10px 16px; font-weight: 700; font-size: 1.05rem;
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    box-shadow: 0 4px 14px rgba(0,0,0,.35), inset 0 1px 0 #fff;
-    border: 1px solid #e8dcc0;
-  }
-  #turnBanner .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #555; }
   #main { display: flex; gap: 10px; align-items: stretch; }
   #boardWrap {
     flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
@@ -88,11 +58,9 @@
   }
   @media (orientation: landscape) and (max-height: 500px) {
     #app { gap: 6px; padding: 6px; }
-    header { padding: 6px 12px; }
-    header h1 { font-size: 1.1rem; }
-    #turnBanner { padding: 6px 12px; font-size: .95rem; }
+    #boardWrap { height: 94vh; }
+    #board { width: 100%; height: 100%; max-height: none; }
     #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; }
-    #board { max-height: 88vh; }
     #zoomHint { display: none; }
     .btn { padding: 8px 10px; font-size: .88rem; }
   }
@@ -131,7 +99,6 @@
     font-size: .8rem; max-height: 160px; overflow-y: auto;
   }
   #log div { padding: 3px 0; border-bottom: 1px dotted #e8dcc0; }
-  .hint { font-size: .88rem; background: #fff8e1; border: 1px solid var(--gold); border-radius: 10px; padding: 9px 10px; }
   .hex { cursor: default; }
   .hex.robber-ok { cursor: pointer; }
   .hex.robber-ok polygon { stroke: var(--gold); stroke-width: 4; }
@@ -197,23 +164,12 @@
 </head>
 <body>
 <div id="app">
-  <header>
-    <h1>🏝️ Family Catan</h1>
-    <div id="netStatus"><span id="netDot"></span><span id="netText">offline</span></div>
-    <div id="standings"></div>
-    <div class="btnrow">
-      <button class="btn" id="rulesBtn">❓ Rules</button>
-      <button class="btn" id="newGameBtn">🔄 New Game</button>
-    </div>
-  </header>
-  <div id="turnBanner"><span class="dot" id="turnDot"></span><span id="turnText">Welcome to Family Catan</span></div>
   <div id="main">
     <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg>
       <div id="rollBadge" style="display:none"><span class="faces">🎲🎲</span><span id="rollTotal"></span></div>
       <div id="zoomHint">pinch to zoom · double-tap to reset</div>
     </div>
     <div id="panel">
-      <div class="hint" id="hint">Tap 🔄 New Game to start.</div>
       <div id="offerBox"></div>
       <div id="diceArea">
         <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
@@ -1458,15 +1414,6 @@ function renderBoard(){
     }
   }
 }
-function renderStandings(){
-  const d=$('standings'); if(!d||!S) return; d.innerHTML='';
-  S.players.forEach((p,i)=>{
-    const c=document.createElement('div');
-    c.className='pchip'+(i===S.turn&&S.phase!=='gameover'?' active':'')+(p.dc?' dc':'')+((NET.mode==='online'&&i===NET.myIdx)?' me':'');
-    c.innerHTML=`<span class="dot" style="background:${p.color}"></span>${isBot(i)?'🤖 ':''}${escapeHtml(p.name)} · ${vp(p)} VP${p.hasLongest?' 🛣️':''}${p.dc?' ⚠️':''}`;
-    d.appendChild(c);
-  });
-}
 function renderRes(){
   const bar=$('resBar'); if(!bar||!S) return; bar.innerHTML='';
   const me=NET.mode==='local'?cur():S.players[NET.myIdx];
@@ -1485,17 +1432,7 @@ function renderLog(){
 function setHint(t){ if(typeof document==='undefined') return; const h=$('hint'); if(h) h.innerHTML=t; }
 function refresh(){
   if(!S) return;
-  renderBoard(); renderStandings(); renderRes(); renderLog(); renderOfferBox();
-  const p=S.players[S.turn];
-  if(p){
-    $('turnDot').style.background=p.color;
-    if(S.phase==='gameover'){ $('turnText').textContent='🏆 '+S.players[S.winner].name+' wins!'; }
-    else if(S.phase==='setup'){ $('turnText').textContent=p.name+' — setup: place '+(S.setupSub==='settlement'?'a settlement':'a road'); }
-    else{
-      const mine=canActAs(S.turn);
-      $('turnText').textContent=mine?'🎯 Your turn, '+p.name:p.name+"'s turn";
-    }
-  }
+  renderBoard(); renderRes(); renderLog(); renderOfferBox();
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
@@ -1688,8 +1625,6 @@ function boot(){
   $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
-  $('rulesBtn').onclick=showRules;
-  $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
