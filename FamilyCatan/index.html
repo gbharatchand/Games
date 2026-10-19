@@ -36,10 +36,11 @@
   }
   h1, h2, .btn { font-family: "Baloo 2", -apple-system, 'Segoe UI', sans-serif; }
   #app { width: 100%; max-width: 1200px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-  #main { display: flex; gap: 10px; align-items: stretch; min-height: calc(100vh - 20px); }
+  #main { display: flex; gap: 10px; align-items: stretch; min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
   #boardWrap {
     flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
     display: flex; justify-content: center; align-items: center; min-width: 0;
+    min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px);
     box-shadow: inset 0 2px 12px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.3);
     border: 1px solid rgba(255,255,255,.12);
   }
@@ -53,6 +54,7 @@
   }
   @media (max-width: 760px) and (orientation: portrait) {
     #main { flex-direction: column; min-height: 0; }
+    #boardWrap { min-height: 0; }
     #panel { flex: none; max-height: none; }
     #board { height: auto; max-height: 52vh; }
   }
