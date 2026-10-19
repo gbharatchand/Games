@@ -156,6 +156,13 @@
     display: flex; align-items: center; gap: 10px; pointer-events: none;
   }
   #rollBadge .faces { font-size: 2.1rem; }
+  #restartBtn {
+    position: absolute; top: 10px; right: 10px; z-index: 6;
+    width: 46px; height: 46px; border-radius: 50%; padding: 0;
+    font-size: 1.25rem; line-height: 1; opacity: .92;
+  }
+  #devHand { display: flex; flex-wrap: wrap; gap: 6px; }
+  #devHand .res { position: relative; }
   #zoomHint {
     position: absolute; bottom: 8px; right: 10px; z-index: 5;
     font-size: .7rem; color: rgba(255,255,255,.65); pointer-events: none;
@@ -169,6 +176,7 @@
     <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg>
       <div id="rollBadge" style="display:none"><span class="faces">🎲🎲</span><span id="rollTotal"></span></div>
       <div id="zoomHint">pinch to zoom · double-tap to reset</div>
+      <button class="btn" id="restartBtn" title="Restart game">🔄</button>
     </div>
     <div id="panel">
       <div id="offerBox"></div>
@@ -186,6 +194,10 @@
           <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
           <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
         </div>
+      </div>
+      <div><strong>🧙 Dev Cards</strong>
+        <div class="btnrow"><button class="btn" id="buyDevBtn">🧙 Buy Card<br><small>1🌾 1🐑 1⛰️</small></button></div>
+        <div id="devHand"></div>
       </div>
       <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
       <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
@@ -214,6 +226,21 @@ const COSTS = {
   settlement:{ brick:1, wood:1, sheep:1, wheat:1 },
   city:      { wheat:2, ore:3 },
 };
+const DEV_COST = { wheat:1, sheep:1, ore:1 };
+const DEV_INFO = {
+  knight:  { icon:'🕵️', name:'Knight' },
+  vp:      { icon:'🏆', name:'Victory Point' },
+  road:    { icon:'🛣️', name:'Road Building' },
+  plenty:  { icon:'🌾', name:'Year of Plenty' },
+  monopoly:{ icon:'👑', name:'Monopoly' },
+};
+function buildDevDeck(){
+  const d=[];
+  for(let i=0;i<14;i++) d.push('knight');
+  for(let i=0;i<5;i++) d.push('vp');
+  for(let i=0;i<2;i++){ d.push('road'); d.push('plenty'); d.push('monopoly'); }
+  return shuffle(d);
+}
 const PLAYER_COLORS = [
   { name:'Red',    color:'#e74c3c' },
   { name:'Blue',   color:'#3498db' },
@@ -291,15 +318,15 @@ function newGame(playerNames,botFlags){
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
-    ports:b.ports, boardCx:b.boardCx,
+    ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
-      res:{wood:0,brick:0,sheep:0,wheat:0,ore:0},
+      res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
       longest:0, hasLongest:false, dc:false,
     })),
     turn:0, phase:'setup', dice:[1,1], rolled:false,
     setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
-    mode:null, discardQueue:[], pending:null, offer:null,
+    mode:null, freeRoads:0, discardQueue:[], pending:null, offer:null,
     log:[], winner:-1,
     bots:playerNames.map((_,i)=>!!(botFlags&&botFlags[i])),
   };
@@ -316,6 +343,7 @@ function vp(p){
   let v=0;
   for(const k in S.vertices){ const vtx=S.vertices[k]; if(vtx.owner===i) v+= vtx.kind==='city'?2:1; }
   if(p.hasLongest) v+=2;
+  if(p.dev) v+=p.dev.filter(c=>c.t==='vp').length;
   return v;
 }
 function canAfford(p,cost){ return Object.keys(cost).every(r=>p.res[r]>=cost[r]); }
@@ -562,9 +590,13 @@ function applyAct(idx,a){
       if(S.phase!=='play'||S.turn!==idx) return false;
       if(a.what==='road'){
         const e=S.edges[a.key];
-        if(!e||!canAfford(p,COSTS.road)||!roadValid(e,idx)) return false;
-        payCost(p,COSTS.road); e.owner=idx;
-        addLog(`🛣️ ${p.name} built a road.`);
+        const free=S.freeRoads>0;
+        if(!e||e.owner!==-1) return false;
+        if(!free&&!canAfford(p,COSTS.road)) return false;
+        if(!roadValid(e,idx)) return false;
+        if(free) S.freeRoads--; else payCost(p,COSTS.road);
+        e.owner=idx;
+        addLog(`🛣️ ${p.name} built a road${free?' (Road Building)':''}.`);
       }else if(a.what==='settlement'){
         const v=S.vertices[a.key];
         if(!v||!canAfford(p,COSTS.settlement)||!settleValid(v,idx)) return false;
@@ -576,7 +608,7 @@ function applyAct(idx,a){
         payCost(p,COSTS.city); v.kind='city';
         addLog(`🏘️ ${p.name} built a city.`);
       }else return false;
-      S.mode=null;
+      S.mode=S.freeRoads>0?'buildRoad':null;
       updateLongest(); checkWin();
       return true;
     }
@@ -609,6 +641,58 @@ function applyAct(idx,a){
       if(!S.offer) return false;
       addLog(`🤝 ${S.players[S.offer.from].name}'s offer was declined.`);
       S.offer=null; return true;
+    }
+    case 'buyDev':{
+      if(S.phase!=='play'||S.turn!==idx) return false;
+      if(!S.devDeck.length||!canAfford(p,DEV_COST)) return false;
+      payCost(p,DEV_COST);
+      const t=S.devDeck.pop();
+      p.dev.push({t:t, fresh:true});
+      addLog(`🧙 ${p.name} bought a development card.`);
+      return true;
+    }
+    case 'playDev':{
+      if(S.phase!=='play'||S.turn!==idx) return false;
+      const di=p.dev.findIndex(c=>c.t===a.what&&!c.fresh);
+      if(di<0) return false;
+      if(a.what==='knight'){
+        p.dev.splice(di,1);
+        S.mode='moveRobber';
+        addLog(`🕵️ ${p.name} played a Knight!`);
+      }else if(a.what==='road'){
+        p.dev.splice(di,1);
+        S.freeRoads=(S.freeRoads||0)+2; S.mode='buildRoad';
+        addLog(`🛣️ ${p.name} played Road Building!`);
+      }else if(a.what==='plenty'){
+        p.dev.splice(di,1);
+        addLog(`🌾 ${p.name} played Year of Plenty!`);
+        if(isLocalPlayer(idx)){ showPlentyModal(idx); }
+        else{ S.pending={kind:'plenty', player:idx}; }
+      }else if(a.what==='monopoly'){
+        p.dev.splice(di,1);
+        addLog(`👑 ${p.name} played Monopoly!`);
+        if(isLocalPlayer(idx)){ showMonopolyModal(idx); }
+        else{ S.pending={kind:'monopoly', player:idx}; }
+      }else return false;
+      return true;
+    }
+    case 'resolvePlenty':{
+      if(!S.pending||S.pending.kind!=='plenty'||S.pending.player!==idx) return false;
+      if(!RES.includes(a.r1)||!RES.includes(a.r2)) return false;
+      giveRes(p,a.r1,1); giveRes(p,a.r2,1);
+      addLog(`🌾 ${p.name} took 1${RES_ICON[a.r1]} 1${RES_ICON[a.r2]} (Year of Plenty).`);
+      S.pending=null;
+      return true;
+    }
+    case 'resolveMonopoly':{
+      if(!S.pending||S.pending.kind!=='monopoly'||S.pending.player!==idx) return false;
+      if(!RES.includes(a.res)) return false;
+      let took=0;
+      S.players.forEach((q,qi)=>{ if(qi!==idx){ took+=q.res[a.res]; q.res[a.res]=0; } });
+      p.res[a.res]+=took;
+      addLog(`👑 ${p.name} monopolized ${RES_ICON[a.res]} — took ${took} from everyone.`);
+      S.pending=null;
+      return true;
     }
     case 'moveRobber':{
       if(S.mode!=='moveRobber'||a.hex===S.robberHex) return false;
@@ -938,6 +1022,7 @@ function checkWin(){
   return false;
 }
 function doEndTurn(){
+  S.players[S.turn].dev.forEach(c=>{ c.fresh=false; });
   S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null;
   addLog(`➡️ ${cur().name}'s turn.`);
 }
@@ -1060,6 +1145,10 @@ function renderPrompts(){
     showDiscardModal(S.pending);
   }else if(S.pending&&S.pending.kind==='steal'&&S.pending.chooser===NET.myIdx){
     showStealModal(S.pending.victims);
+  }else if(S.pending&&S.pending.kind==='plenty'&&S.pending.player===NET.myIdx){
+    showPlentyModal(S.pending.player);
+  }else if(S.pending&&S.pending.kind==='monopoly'&&S.pending.player===NET.myIdx){
+    showMonopolyModal(S.pending.player);
   }
 }
 function showDiscardModal(dq){
@@ -1112,6 +1201,40 @@ function showStealModal(victims){
     const vi=parseInt(b.dataset.vi);
     if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'steal', victim:vi}}); }
     else{ doSteal(vi); afterChange(); }
+  });
+}
+function resOptions(){ return RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join(''); }
+function showPlentyModal(pi){
+  const ov=overlay(`<h2>🌾 Year of Plenty</h2><p>Take any 2 resources:</p>
+    <div class="tradeRow"><span>1st:</span><select id="pl1">${resOptions()}</select>
+    <span>2nd:</span><select id="pl2">${resOptions()}</select></div>
+    <div class="btnrow"><button class="btn primary" id="plOk">Take</button></div>`);
+  ov.querySelector('#plOk').onclick=()=>{
+    const r1=ov.querySelector('#pl1').value, r2=ov.querySelector('#pl2').value;
+    closeOverlay(); shownPrompt=null;
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'resolvePlenty', r1:r1, r2:r2}}); }
+    else{
+      giveRes(S.players[pi],r1,1); giveRes(S.players[pi],r2,1);
+      addLog(`🌾 ${S.players[pi].name} took 1${RES_ICON[r1]} 1${RES_ICON[r2]} (Year of Plenty).`);
+      afterChange();
+    }
+  };
+}
+function showMonopolyModal(pi){
+  const ov=overlay(`<h2>👑 Monopoly</h2><p>Take ALL of one resource from everyone:</p>
+    <div class="btnrow" id="monBtns">${RES.map(r=>`<button class="btn" data-r="${r}">${RES_ICON[r]} ${RES_NAME[r]}</button>`).join('')}</div>`);
+  ov.querySelector('#monBtns').addEventListener('click',e=>{
+    const b=e.target.closest('button[data-r]'); if(!b) return;
+    const r=b.dataset.r;
+    closeOverlay(); shownPrompt=null;
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'resolveMonopoly', res:r}}); }
+    else{
+      let took=0;
+      S.players.forEach((q,qi)=>{ if(qi!==pi){ took+=q.res[r]; q.res[r]=0; } });
+      S.players[pi].res[r]+=took;
+      addLog(`👑 ${S.players[pi].name} monopolized ${RES_ICON[r]} — took ${took} from everyone.`);
+      afterChange();
+    }
   });
 }
 function renderOfferBox(){
@@ -1208,6 +1331,7 @@ function showRules(){
     <li>🔄 <b>Trade</b> with the bank (4:1 — or 2:1 at ports you own), or make offers to other players.</li>
     <li>⚓ <b>Ports:</b> coastal spots marked ⚓. Build a settlement there to unlock 2:1 trades for that resource.</li>
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
+    <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
@@ -1426,6 +1550,31 @@ function renderRes(){
     bar.appendChild(d);
   });
 }
+function renderDev(){
+  const hand=$('devHand'); if(!hand||!S) return; hand.innerHTML='';
+  const me=NET.mode==='local'?cur():(S.players[NET.myIdx]||null);
+  if(!me||!me.dev) return;
+  const showPlay=S.phase==='play'&&!isBot(S.turn)&&(NET.mode==='local'||S.turn===NET.myIdx);
+  me.dev.forEach(c=>{
+    const info=DEV_INFO[c.t];
+    const d=document.createElement('div'); d.className='res';
+    d.innerHTML=`${info.icon}<small>${info.name}${c.fresh?' · NEW':''}${c.t==='vp'?' · +1 VP':''}</small>`;
+    if(showPlay&&!c.fresh&&c.t!=='vp'){
+      const b=document.createElement('button'); b.className='btn'; b.style.marginTop='4px'; b.textContent='Play';
+      b.onclick=()=>playDevCard(c.t);
+      d.appendChild(b);
+    }
+    hand.appendChild(d);
+  });
+  const left=S.devDeck?S.devDeck.length:0;
+  const buy=$('buyDevBtn');
+  if(buy) buy.innerHTML=`🧙 Buy Card<br><small>1🌾 1🐑 1⛰️ · ${left} left</small>`;
+}
+function playDevCard(t){
+  if(!S||S.phase!=='play') return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
+  sendOrDo({kind:'playDev', what:t});
+}
 function renderLog(){
   const d=$('log'); if(!d||!S) return; d.innerHTML='';
   S.log.forEach(m=>{ const x=document.createElement('div'); x.textContent=m; d.appendChild(x); });
@@ -1433,7 +1582,7 @@ function renderLog(){
 function setHint(t){ if(typeof document==='undefined') return; const h=$('hint'); if(h) h.innerHTML=t; }
 function refresh(){
   if(!S) return;
-  renderBoard(); renderRes(); renderLog(); renderOfferBox();
+  renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox();
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
@@ -1442,6 +1591,7 @@ function refresh(){
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
   $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
   $('offerTradeBtn').disabled=!canBuild;
+  $('buyDevBtn').disabled=!(canBuild&&S.devDeck&&S.devDeck.length>0);
   // rolled-number badge next to the board
   const badge=$('rollBadge');
   if(badge){
@@ -1626,6 +1776,8 @@ function boot(){
   $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
+  $('buyDevBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
+  $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
