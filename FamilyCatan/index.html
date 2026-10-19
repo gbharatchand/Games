@@ -3,6 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Family Catan">
+<meta name="theme-color" content="#0d3a23">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <title>Family Catan</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -163,6 +171,20 @@
     background: #e8f5e9; border: 2px solid #27ae60; border-radius: 10px; padding: 10px;
     font-size: .88rem; font-weight: 600;
   }
+  #boardWrap { position: relative; touch-action: none; overflow: hidden; }
+  #rollBadge {
+    position: absolute; top: 10px; left: 10px; z-index: 5;
+    background: linear-gradient(180deg, #fffdf6, #f3ecd8);
+    border: 2px solid var(--gold); border-radius: 12px; padding: 6px 12px;
+    font-weight: 800; font-size: 1.05rem; box-shadow: 0 3px 8px rgba(0,0,0,.4);
+    display: flex; align-items: center; gap: 8px; pointer-events: none;
+  }
+  #rollBadge .faces { font-size: 1.5rem; }
+  #zoomHint {
+    position: absolute; bottom: 8px; right: 10px; z-index: 5;
+    font-size: .7rem; color: rgba(255,255,255,.65); pointer-events: none;
+  }
+  .port { pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
 </style>
 </head>
 <body>
@@ -178,7 +200,10 @@
   </header>
   <div id="turnBanner"><span class="dot" id="turnDot"></span><span id="turnText">Welcome to Family Catan</span></div>
   <div id="main">
-    <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg></div>
+    <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg>
+      <div id="rollBadge" style="display:none"><span class="faces">🎲🎲</span><span id="rollTotal"></span></div>
+      <div id="zoomHint">pinch to zoom · double-tap to reset</div>
+    </div>
     <div id="panel">
       <div class="hint" id="hint">Tap 🔄 New Game to start.</div>
       <div id="offerBox"></div>
@@ -191,13 +216,14 @@
         <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
         <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
         <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
-        <button class="btn" id="bankTradeBtn">🔄 Bank 4:1</button>
+        <button class="btn" id="bankTradeBtn">🔄 Bank Trade</button>
       </div></div>
       <div><strong>Trade with players</strong>
         <div class="btnrow"><button class="btn" id="offerTradeBtn">🤝 Make Offer</button></div>
       </div>
       <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
-      <div><strong>📜 Log</strong><div id="log"></div></div>
+      <div class="btnrow"><button class="btn" id="logToggle">📜 Log</button></div>
+      <div id="logWrap" style="display:none"><div id="log"></div></div>
     </div>
   </div>
 </div>
@@ -270,7 +296,26 @@ function buildBoardData(){
     }
   });
   const robberHex = hexes.find(h=>h.terrain==='desert').id;
-  return { hexes, vertices, edges, robberHex };
+  // ---- Ports: coastal vertices (touching <=2 hexes), 4 evenly spaced, 2:1 rates ----
+  const boardCx = hexes.reduce((s,h)=>{ const c=hexCenter(h.q,h.r); return { x:s.x+c.x/hexes.length, y:s.y+c.y/hexes.length }; },{x:0,y:0});
+  const coastal = Object.values(vertices).filter(v=>v.hexes.length<=2)
+    .sort((a,b)=>Math.atan2(a.y-boardCx.y,a.x-boardCx.x)-Math.atan2(b.y-boardCx.y,b.x-boardCx.x));
+  const portRes = shuffle(['brick','wood','wheat','ore']);
+  const ports = [];
+  for(let i=0;i<4 && coastal.length;i++){
+    const v = coastal[Math.floor(i*coastal.length/4)%coastal.length];
+    if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
+  }
+  return { hexes, vertices, edges, robberHex, ports, boardCx };
+}
+function portRate(pi,res){
+  // 2:1 if the player owns a settlement/city on a matching port, else 4:1
+  if(!S||!S.ports) return 4;
+  for(const pt of S.ports){
+    const v=S.vertices[pt.vertex];
+    if(v&&v.owner===pi&&pt.res===res) return 2;
+  }
+  return 4;
 }
 
 /* ================= Game state ================= */
@@ -279,6 +324,7 @@ function newGame(playerNames){
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
+    ports:b.ports, boardCx:b.boardCx,
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0},
@@ -529,9 +575,10 @@ function applyAct(idx,a){
     }
     case 'bankTrade':{
       if(S.phase!=='play'||S.turn!==idx||a.give===a.get) return false;
-      if(p.res[a.give]<4||!RES.includes(a.give)||!RES.includes(a.get)) return false;
-      p.res[a.give]-=4; p.res[a.get]++;
-      addLog(`🔄 ${p.name} traded 4${RES_ICON[a.give]} for 1${RES_ICON[a.get]} with the bank.`);
+      const rate=portRate(idx,a.give);
+      if(p.res[a.give]<rate||!RES.includes(a.give)||!RES.includes(a.get)) return false;
+      p.res[a.give]-=rate; p.res[a.get]++;
+      addLog(`🔄 ${p.name} traded ${rate}${RES_ICON[a.give]} for 1${RES_ICON[a.get]} with the bank.`);
       return true;
     }
     case 'offer':{
@@ -948,10 +995,11 @@ function renderOfferBox(){
 function bankTradeUI(){
   if(!S) return;
   const me=NET.mode==='local'?cur():S.players[NET.myIdx];
-  const givables=RES.filter(r=>me.res[r]>=4);
-  if(!givables.length){ setHint('You need 4 of a kind to trade with the bank.'); return; }
-  const ov=overlay(`<h2>🔄 Bank Trade (4:1)</h2>
-    <div class="tradeRow"><span>Give 4:</span><select id="tGive">${givables.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]} (${me.res[r]})</option>`).join('')}</select></div>
+  const myIdx=NET.mode==='local'?S.turn:NET.myIdx;
+  const rates=RES.map(r=>({r:r, rate:portRate(myIdx,r)})).filter(o=>me.res[o.r]>=o.rate);
+  if(!rates.length){ setHint('You need enough of one resource to trade with the bank.'); return; }
+  const ov=overlay(`<h2>🔄 Bank Trade</h2>
+    <div class="tradeRow"><span>Give:</span><select id="tGive">${rates.map(o=>`<option value="${o.r}">${o.rate}${RES_ICON[o.r]} ${RES_NAME[o.r]} (${me.res[o.r]})${o.rate===2?' ⚓2:1 port':''}</option>`).join('')}</select></div>
     <div class="tradeRow"><span>Get 1:</span><select id="tGet">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
     <div class="btnrow"><button class="btn primary" id="tGo">Trade</button><button class="btn" id="tCancel">Cancel</button></div>`);
   ov.querySelector('#tCancel').onclick=closeOverlay;
@@ -1001,19 +1049,130 @@ function showRules(){
   <ul class="rulesList">
     <li>🎲 <b>Roll the dice</b> each turn. Hexes showing that number produce resources for adjacent settlements (1 card) and cities (2 cards). The robber blocks its hex.</li>
     <li>🏠 <b>Build:</b> Road = 1🧱 1🪵 · Settlement = 1🧱 1🪵 1🐑 1🌾 · City (upgrade) = 2🌾 3⛰️.</li>
-    <li>🔄 <b>Trade</b> 4:1 with the bank, or make offers to other players.</li>
+    <li>🔄 <b>Trade</b> with the bank (4:1 — or 2:1 at ports you own), or make offers to other players.</li>
+    <li>⚓ <b>Ports:</b> coastal spots marked ⚓. Build a settlement there to unlock 2:1 trades for that resource.</li>
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
+    <li>📱 <b>App:</b> use your browser's "Add to Home Screen" to launch Family Catan like an app — it even works offline.</li>
+    <li>🔍 <b>Zoom:</b> pinch the board to zoom in, drag to pan, double-tap to reset. Everything stays tappable.</li>
   </ul>
   <div class="btnrow"><button class="btn primary" id="rulesOk">Got it!</button></div>`)
   .querySelector('#rulesOk').onclick=closeOverlay;
 }
 
 /* ================= Rendering ================= */
+function drawHouse(g,x,y,w,color,cls,isCity){
+  // small house marker (settlement) / bigger house with chimney (city)
+  const grp=el('g',{class:cls},g);
+  const h=w*0.72, roofH=w*0.5, y0=y-h*0.08;
+  el('rect',{x:(x-w/2).toFixed(1), y:y0.toFixed(1), width:w.toFixed(1), height:(h*0.58).toFixed(1),
+    fill:color, stroke:'#222','stroke-width':2.5},grp);
+  el('polygon',{points:`${(x-w/2-2).toFixed(1)},${y0.toFixed(1)} ${(x+w/2+2).toFixed(1)},${y0.toFixed(1)} ${x.toFixed(1)},${(y0-roofH).toFixed(1)}`,
+    fill:color, stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
+  el('rect',{x:(x-w*0.11).toFixed(1), y:(y0+h*0.58-h*0.3).toFixed(1), width:(w*0.22).toFixed(1), height:(h*0.3).toFixed(1),
+    fill:'#5a3a20'},grp);
+  if(isCity){
+    el('rect',{x:(x+w*0.2).toFixed(1), y:(y0-roofH*0.85).toFixed(1), width:(w*0.13).toFixed(1), height:(roofH*0.55).toFixed(1),
+      fill:color, stroke:'#222','stroke-width':2},grp);
+  }
+}
+function renderPorts(g){
+  if(!S.ports) return;
+  const c=S.boardCx||{x:0,y:0};
+  S.ports.forEach(pt=>{
+    const v=S.vertices[pt.vertex]; if(!v) return;
+    const dx=v.x-c.x, dy=v.y-c.y, len=Math.hypot(dx,dy)||1;
+    const bx=v.x+dx/len*42, by=v.y+dy/len*42;
+    el('line',{x1:v.x.toFixed(1),y1:v.y.toFixed(1),x2:bx.toFixed(1),y2:by.toFixed(1),
+      stroke:'rgba(255,255,255,.65)','stroke-width':3,'stroke-dasharray':'5 4'},g);
+    const pg=el('g',{class:'port'},g);
+    const owned=v.owner>=0;
+    el('circle',{cx:bx.toFixed(1),cy:by.toFixed(1),r:20,fill:'#fffdf6',
+      stroke:owned?S.players[v.owner].color:'#d4a017','stroke-width':3},pg);
+    const at=el('text',{x:bx.toFixed(1),y:(by-2).toFixed(1),'text-anchor':'middle','font-size':'15'},pg);
+    at.textContent='⚓';
+    const rt=el('text',{x:bx.toFixed(1),y:(by+14).toFixed(1),'text-anchor':'middle','font-size':'11','font-weight':'bold'},pg);
+    rt.textContent=RES_ICON[pt.res]+' 2:1';
+  });
+}
+/* ---- Board pinch-zoom / pan (stays fully interactive) ---- */
+const ZOOM={s:1,tx:0,ty:0};
+function zoomCenter(){
+  const svg=$('board'); if(!svg) return {x:0,y:0};
+  const vb=svg.viewBox.baseVal;
+  return {x:vb.x+vb.width/2, y:vb.y+vb.height/2};
+}
+function applyZoom(){
+  const zr=document.querySelector('#zoomRoot'); if(!zr) return;
+  const c=zoomCenter();
+  zr.setAttribute('transform',
+    `translate(${(c.x+ZOOM.tx).toFixed(1)} ${(c.y+ZOOM.ty).toFixed(1)}) scale(${ZOOM.s.toFixed(3)}) translate(${(-c.x).toFixed(1)} ${(-c.y).toFixed(1)})`);
+}
+function resetZoom(){ ZOOM.s=1; ZOOM.tx=0; ZOOM.ty=0; applyZoom(); }
+function initBoardGestures(){
+  const wrap=$('boardWrap'); if(!wrap) return;
+  let pinch0=0, s0=1, tx0=0, ty0=0, cx0=0, cy0=0;
+  let panning=false, moved=false, suppressClick=false, lastTap=0, sx=0, sy=0;
+  const px2units=()=>{ const svg=$('board'); const r=svg.getBoundingClientRect(); const vb=svg.viewBox.baseVal; return vb.width/Math.max(1,r.width); };
+  wrap.addEventListener('touchstart',e=>{
+    if(e.touches.length===2){
+      e.preventDefault();
+      const a=e.touches[0], b=e.touches[1];
+      pinch0=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      s0=ZOOM.s; tx0=ZOOM.tx; ty0=ZOOM.ty;
+      cx0=(a.clientX+b.clientX)/2; cy0=(a.clientY+b.clientY)/2;
+    }else if(e.touches.length===1){
+      const t=e.touches[0]; sx=t.clientX; sy=t.clientY; moved=false; panning=false;
+    }
+  },{passive:false});
+  wrap.addEventListener('touchmove',e=>{
+    if(e.touches.length===2){
+      e.preventDefault();
+      const a=e.touches[0], b=e.touches[1];
+      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      if(pinch0>0){
+        const k=px2units();
+        ZOOM.s=Math.min(4,Math.max(1,s0*d/pinch0));
+        const ncx=(a.clientX+b.clientX)/2, ncy=(a.clientY+b.clientY)/2;
+        ZOOM.tx=tx0+(ncx-cx0)*k; ZOOM.ty=ty0+(ncy-cy0)*k;
+        applyZoom();
+      }
+    }else if(e.touches.length===1&&ZOOM.s>1.05){
+      const t=e.touches[0];
+      if(Math.hypot(t.clientX-sx,t.clientY-sy)>12){ panning=true; moved=true; }
+      if(panning){
+        e.preventDefault();
+        const k=px2units();
+        ZOOM.tx+=(t.clientX-sx)*k; ZOOM.ty+=(t.clientY-sy)*k;
+        sx=t.clientX; sy=t.clientY; applyZoom();
+      }
+    }
+  },{passive:false});
+  wrap.addEventListener('touchend',e=>{
+    if(e.touches.length===0){
+      const now=Date.now();
+      if(!moved&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
+      lastTap=now; panning=false; pinch0=0;
+    }
+  });
+  wrap.addEventListener('click',e=>{
+    if(moved||suppressClick){ e.stopPropagation(); e.preventDefault(); moved=false; suppressClick=false; }
+  },true);
+  wrap.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const f=e.deltaY<0?1.12:1/1.12;
+    ZOOM.s=Math.min(4,Math.max(1,ZOOM.s*f));
+    applyZoom();
+  },{passive:false});
+}
 function renderBoard(){
-  const svg=$('board'); if(!svg||!S) return; svg.innerHTML='';
+  const svg=$('board'); if(!svg||!S) return;
+  let zr=svg.querySelector('#zoomRoot');
+  if(!zr){ zr=el('g',{id:'zoomRoot'},svg); }
+  zr.innerHTML='';
+  const g=el('g',{id:'boardContent'},zr);
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
@@ -1021,7 +1180,6 @@ function renderBoard(){
   });
   const pad=70;
   svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
-  const g=el('g',{},svg);
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
     const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
@@ -1065,14 +1223,12 @@ function renderBoard(){
     const v=S.vertices[k];
     if(v.owner>=0){
       const col=S.players[v.owner].color;
-      if(v.kind==='city'){
-        el('circle',{cx:v.x,cy:v.y,r:15,fill:col,stroke:'#222','stroke-width':2.5,class:'city'},g);
-        el('circle',{cx:v.x,cy:v.y,r:7,fill:'none',stroke:'#fff','stroke-width':2.5,class:'city'},g);
-      }else{
-        el('circle',{cx:v.x,cy:v.y,r:11,fill:col,stroke:'#222','stroke-width':2.5,class:'settlement'},g);
-      }
+      if(v.kind==='city') drawHouse(g,v.x,v.y,30,col,'city',true);
+      else drawHouse(g,v.x,v.y,24,col,'settlement',false);
     }
   }
+  renderPorts(g);
+  applyZoom();
   if(canPlace&&(effMode()==='buildSettlement'||effMode()==='buildCity'||S.mode==='setupSettlement')){
     for(const k in S.vertices){
       const v=S.vertices[k];
@@ -1132,6 +1288,17 @@ function refresh(){
   // dice faces from state
   const diceEl=$('dice');
   if(diceEl&&S.dice) diceEl.textContent='⚀⚁⚂⚃⚄⚅'[S.dice[0]-1]+'⚀⚁⚂⚃⚄⚅'[S.dice[1]-1];
+  // rolled-number badge next to the board
+  const badge=$('rollBadge');
+  if(badge){
+    if(S.rolled&&S.dice&&S.phase==='play'){
+      badge.style.display='flex';
+      badge.querySelector('.faces').textContent='⚀⚁⚂⚃⚄⚅'[S.dice[0]-1]+'⚀⚁⚂⚃⚄⚅'[S.dice[1]-1];
+      $('rollTotal').textContent='= '+(S.dice[0]+S.dice[1]);
+    }else{
+      badge.style.display='none';
+    }
+  }
 }
 
 /* ================= Menu & lobby ================= */
@@ -1257,6 +1424,9 @@ function boot(){
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('rulesBtn').onclick=showRules;
   $('newGameBtn').onclick=()=>{ if(confirm('Start a new game? Current progress will be lost.')) location.reload(); };
+  $('logToggle').onclick=()=>{ const w=$('logWrap'); w.style.display=(w.style.display==='none')?'block':'none'; };
+  initBoardGestures();
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
   setNetStatus('offline','');
   showMenu();
 }
