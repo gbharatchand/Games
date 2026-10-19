@@ -189,6 +189,17 @@
   #endTurnWrap { flex: 1; border-radius: 14px; min-width: 0; }
   #endTurnWrap.on { padding: 3px; background: conic-gradient(#f6c90e var(--tp,100%), rgba(120,90,20,.28) 0); }
   #endTurnWrap .btn { width: 100%; }
+  #playerStats { display: flex; flex-direction: column; gap: 6px; }
+  .pstat {
+    display: flex; align-items: center; gap: 7px;
+    background: #fff; border: 1px solid #e8dcc0; border-radius: 10px;
+    padding: 6px 8px; font-size: .8rem;
+  }
+  .pstat .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,.25); }
+  .pstat .nm { font-weight: 800; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pstat .nums { color: #6b5b3e; white-space: nowrap; }
+  .pstat .vp { font-weight: 900; white-space: nowrap; }
+  .pstat .badge { white-space: nowrap; }
   #dcDeck {
     position: absolute; left: 10px; bottom: 10px; z-index: 6;
     width: 56px; height: 78px; cursor: pointer;
@@ -256,6 +267,7 @@
         </div>
         <div class="pcard"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
         <div class="btnrow"><div id="endTurnWrap"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div></div>
+        <div class="pcard"><strong>Players</strong><div id="playerStats"></div></div>
         <div id="logWrap" style="display:none"><div id="log"></div></div>
       </div>
       <div class="tabpane" id="pane-build">
@@ -395,7 +407,7 @@ function newGame(playerNames,botFlags){
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
-      longest:0, hasLongest:false, dc:false,
+      longest:0, hasLongest:false, knights:0, hasLargestArmy:false, dc:false,
     })),
     turn:0, phase:'setup', dice:[1,1], rolled:false,
     setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
@@ -416,6 +428,7 @@ function vp(p){
   let v=0;
   for(const k in S.vertices){ const vtx=S.vertices[k]; if(vtx.owner===i) v+= vtx.kind==='city'?2:1; }
   if(p.hasLongest) v+=2;
+  if(p.hasLargestArmy) v+=2;
   if(p.dev) v+=p.dev.filter(c=>c.t==='vp').length;
   return v;
 }
@@ -730,6 +743,8 @@ function applyAct(idx,a){
       if(di<0) return false;
       if(a.what==='knight'){
         p.dev.splice(di,1);
+        p.knights=(p.knights||0)+1;
+        updateLargestArmy();
         S.mode='moveRobber';
         addLog(`🕵️ ${p.name} played a Knight!`);
       }else if(a.what==='road'){
@@ -1083,6 +1098,16 @@ function updateLongest(){
     p.hasLongest=(!tie&&i===holder);
     if(p.hasLongest&&!had) addLog(`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
   });
+}
+function updateLargestArmy(){
+  let best=-1,bc=0;
+  S.players.forEach((p,i)=>{ const k=p.knights||0; if(k>bc){ bc=k; best=i; } });
+  const cur=S.players.findIndex(p=>p.hasLargestArmy);
+  if(best>=0&&bc>=3&&(cur<0||bc>(S.players[cur].knights||0))){
+    if(cur>=0) S.players[cur].hasLargestArmy=false;
+    S.players[best].hasLargestArmy=true;
+    addLog(`⚔️ ${S.players[best].name} claims Largest Army (+2 VP)!`);
+  }
 }
 function checkWin(){
   for(let i=0;i<S.players.length;i++){
@@ -1492,6 +1517,7 @@ function showRules(){
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
+    <li>🛣️ <b>Longest Road</b> (5+ roads) and ⚔️ <b>Largest Army</b> (3+ Knights) each give <b>+2 VP</b> — they can change hands during the game.</li>
     <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — the ring around <b>End Turn</b> counts down. Run out and the game rolls (if you haven't) and passes your turn.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
@@ -1512,25 +1538,39 @@ function shade(hex,f){
   return `rgb(${c((n>>16)&255)},${c((n>>8)&255)},${c(n&255)})`;
 }
 function drawHouse(g,x,y,w,color,cls,isCity){
-  // 2.5D house marker: ground shadow, shaded body edge, two-tone roof
+  // 2.5D markers: ground shadow + shaded edges. Settlements are houses; cities are castle towers.
   const grp=el('g',{class:cls},g);
-  const h=w*0.72, roofH=w*0.5, y0=y-h*0.08;
+  const h=w*0.72, y0=y-h*0.08;
   el('ellipse',{cx:x.toFixed(1), cy:(y+h*0.52).toFixed(1), rx:(w*0.62).toFixed(1), ry:(w*0.18).toFixed(1), fill:'rgba(0,0,0,.28)'},grp);
+  if(isCity){
+    // Castle tower with battlements — a clearly different shape from a house
+    const cw=w*1.12, ch=h*1.18, x0=x-cw/2;
+    el('rect',{x:x0.toFixed(1), y:y0.toFixed(1), width:cw.toFixed(1), height:ch.toFixed(1),
+      fill:color, stroke:'#222','stroke-width':2.5},grp);
+    el('rect',{x:(x0+cw*0.72).toFixed(1), y:y0.toFixed(1), width:(cw*0.28).toFixed(1), height:ch.toFixed(1),
+      fill:'rgba(0,0,0,.18)'},grp);
+    const merlonW=cw/5, merlonH=ch*0.24;
+    for(let mi=0;mi<3;mi++){
+      el('rect',{x:(x0+mi*2*merlonW).toFixed(1), y:(y0-merlonH).toFixed(1), width:merlonW.toFixed(1), height:merlonH.toFixed(1),
+        fill:shade(color,1.15), stroke:'#222','stroke-width':2},grp);
+    }
+    el('rect',{x:(x-cw*0.12).toFixed(1), y:(y0+ch*0.55).toFixed(1), width:(cw*0.24).toFixed(1), height:(ch*0.45).toFixed(1),
+      fill:'#4a2c15', stroke:'#222','stroke-width':1.5},grp);
+    el('rect',{x:(x-cw*0.08).toFixed(1), y:(y0+ch*0.16).toFixed(1), width:(cw*0.16).toFixed(1), height:(ch*0.2).toFixed(1),
+      fill:'#ffe9a8', stroke:'#222','stroke-width':1.5},grp);
+    return;
+  }
   el('rect',{x:(x-w/2).toFixed(1), y:y0.toFixed(1), width:w.toFixed(1), height:(h*0.58).toFixed(1),
     fill:color, stroke:'#222','stroke-width':2.5},grp);
   el('rect',{x:(x+w/2-w*0.22).toFixed(1), y:y0.toFixed(1), width:(w*0.22).toFixed(1), height:(h*0.58).toFixed(1),
     fill:'rgba(0,0,0,.18)'},grp);
-  const apex=`${x.toFixed(1)},${(y0-roofH).toFixed(1)}`;
+  const apex=`${x.toFixed(1)},${(y0-w*0.5).toFixed(1)}`;
   el('polygon',{points:`${(x-w/2-2).toFixed(1)},${y0.toFixed(1)} ${x.toFixed(1)},${y0.toFixed(1)} ${apex}`,
     fill:shade(color,1.18), stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
   el('polygon',{points:`${x.toFixed(1)},${y0.toFixed(1)} ${(x+w/2+2).toFixed(1)},${y0.toFixed(1)} ${apex}`,
     fill:shade(color,0.78), stroke:'#222','stroke-width':2.5,'stroke-linejoin':'round'},grp);
   el('rect',{x:(x-w*0.11).toFixed(1), y:(y0+h*0.58-h*0.3).toFixed(1), width:(w*0.22).toFixed(1), height:(h*0.3).toFixed(1),
     fill:'#5a3a20'},grp);
-  if(isCity){
-    el('rect',{x:(x+w*0.2).toFixed(1), y:(y0-roofH*0.85).toFixed(1), width:(w*0.13).toFixed(1), height:(roofH*0.55).toFixed(1),
-      fill:shade(color,0.85), stroke:'#222','stroke-width':2},grp);
-  }
 }
 function renderPorts(g){
   if(!S.ports) return;
@@ -1699,6 +1739,22 @@ function renderBoard(){
     }
   }
 }
+function roadCount(i){ let n=0; for(const k in S.edges) if(S.edges[k].owner===i) n++; return n; }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function renderPlayerStats(){
+  const elc=$('playerStats'); if(!elc||!S) return;
+  elc.innerHTML='';
+  S.players.forEach((p,i)=>{
+    const d=document.createElement('div'); d.className='pstat';
+    const badges=(p.hasLongest?'🛣️':'')+(p.hasLargestArmy?'⚔️':'');
+    d.innerHTML=`<span class="dot" style="background:${p.color}"></span>`+
+      `<span class="nm">${escHtml(p.name)}${i===S.turn?' ◀':''}</span>`+
+      (badges?`<span class="badge">${badges}</span>`:'')+
+      `<span class="nums">🂠${totalCards(p)} 🧙${p.dev?p.dev.length:0} ⚔️${p.knights||0} 🛣️${roadCount(i)}</span>`+
+      `<span class="vp">${vp(p)} VP</span>`;
+    elc.appendChild(d);
+  });
+}
 function renderRes(){
   const bar=$('resBar'); if(!bar||!S) return; bar.innerHTML='';
   const me=NET.mode==='local'?cur():S.players[NET.myIdx];
@@ -1742,7 +1798,7 @@ function renderLog(){
 function setHint(t){ if(typeof document==='undefined') return; const h=$('hint'); if(h) h.innerHTML=t; }
 function refresh(){
   if(!S) return;
-  renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox(); syncDeck();
+  renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox(); syncDeck(); renderPlayerStats();
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
