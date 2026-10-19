@@ -79,6 +79,14 @@
   .btn.green { background: linear-gradient(180deg, #3bc47a, #27ae60); border-color: #1e8449; color: #fff; box-shadow: 0 3px 0 #186a38, 0 4px 8px rgba(0,0,0,.25); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .btn.green:active { box-shadow: 0 1px 0 #186a38; }
   .btn.cant { opacity: .45; }
+  .card {
+    background: linear-gradient(180deg, #fffdf6, #f7f1de);
+    border: 1px solid #e8dcc0;
+    border-radius: 14px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  }
+  .card > strong { display: block; margin-bottom: 8px; font-size: .95rem; }
   @keyframes turnGlow {
     0%, 100% { box-shadow: 0 3px 0 #7c271e, 0 0 0 0 rgba(211,84,80,.55); }
     50% { box-shadow: 0 3px 0 #7c271e, 0 0 0 12px rgba(211,84,80,0); }
@@ -187,19 +195,19 @@
       <div id="diceArea">
         <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
       </div>
-      <div><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
-      <div><strong>Build</strong><div id="buildBtns">
+      <div class="card"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
+      <div class="card"><strong>Build</strong><div id="buildBtns">
         <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
         <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
         <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
       </div></div>
-      <div><strong>Trade</strong>
+      <div class="card"><strong>Trade</strong>
         <div class="btnrow">
           <button class="btn" id="bankTradeBtn">🏦 Trade with Bank</button>
           <button class="btn" id="offerTradeBtn">🤝 Trade with Players</button>
         </div>
       </div>
-      <div><strong>🧙 Dev Cards</strong>
+      <div class="card"><strong>🧙 Dev Cards</strong>
         <div class="btnrow"><button class="btn" id="buyDevBtn">🧙 Buy Card<br><small>1🌾 1🐑 1⛰️</small></button></div>
         <div id="devHand"></div>
       </div>
