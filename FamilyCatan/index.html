@@ -35,26 +35,26 @@
     touch-action: manipulation;
   }
   h1, h2, .btn { font-family: "Baloo 2", -apple-system, 'Segoe UI', sans-serif; }
-  #app { width: 100%; max-width: 1100px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-  #main { display: flex; gap: 10px; align-items: stretch; }
+  #app { width: 100%; max-width: 1200px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  #main { display: flex; gap: 10px; align-items: stretch; min-height: calc(100vh - 20px); }
   #boardWrap {
     flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
     display: flex; justify-content: center; align-items: center; min-width: 0;
     box-shadow: inset 0 2px 12px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.3);
     border: 1px solid rgba(255,255,255,.12);
   }
-  #board { width: 100%; height: auto; max-height: 62vh; }
+  #board { width: 100%; height: 100%; max-height: none; }
   #board .hex polygon { filter: drop-shadow(0 3px 3px rgba(0,0,0,.35)); }
   #panel {
-    flex: 0 0 340px; background: linear-gradient(180deg, #fffdf6, var(--panel));
+    flex: 0 0 360px; background: linear-gradient(180deg, #fffdf6, var(--panel));
     border-radius: 16px; padding: 12px;
-    display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 20px); overflow-y: auto;
     box-shadow: 0 4px 14px rgba(0,0,0,.35); border: 1px solid #e8dcc0;
   }
   @media (max-width: 760px) and (orientation: portrait) {
-    #main { flex-direction: column; }
+    #main { flex-direction: column; min-height: 0; }
     #panel { flex: none; max-height: none; }
-    #board { max-height: 52vh; }
+    #board { height: auto; max-height: 52vh; }
   }
   @media (orientation: landscape) and (max-height: 500px) {
     #app { gap: 6px; padding: 6px; }
@@ -185,19 +185,41 @@
     width: 46px; height: 46px; border-radius: 50%; padding: 0;
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
-  #timerWrap {
-    position: absolute; top: 0; left: 0; right: 0; height: 26px; z-index: 6;
-    pointer-events: none; display: none;
+  #timerWrap { display: none; }
+  #endTurnWrap { flex: 1; border-radius: 14px; min-width: 0; }
+  #endTurnWrap.on { padding: 3px; background: conic-gradient(#f6c90e var(--tp,100%), rgba(120,90,20,.28) 0); }
+  #endTurnWrap .btn { width: 100%; }
+  #dcDeck {
+    position: absolute; left: 10px; bottom: 10px; z-index: 6;
+    width: 56px; height: 78px; cursor: pointer;
   }
-  #timerBar {
-    position: absolute; top: 0; left: 0; height: 6px; width: 100%;
-    background: linear-gradient(90deg, #f1c40f, #e67e22);
-    border-radius: 0 0 6px 0;
+  #dcDeck .dc-cardback {
+    position: absolute; inset: 0; border-radius: 9px;
+    background: linear-gradient(135deg, #9b59b6, #6c3483);
+    border: 2px solid #f7f1de;
+    box-shadow: 0 2px 6px rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center;
   }
-  #timerText {
-    position: absolute; top: 9px; left: 12px;
-    font-size: .78rem; font-weight: 800; color: #fff;
-    text-shadow: 0 1px 3px rgba(0,0,0,.65);
+  #dcDeck .dc-cardback:nth-child(1) { transform: translate(-5px, 4px) rotate(-7deg); }
+  #dcDeck .dc-cardback:nth-child(2) { transform: translate(0, 2px) rotate(2deg); }
+  #dcDeck .dc-cardback:nth-child(3) { transform: translate(5px, -3px) rotate(8deg); }
+  #dcDeck .dc-cardback span { color: #f6c90e; font-size: 1.6rem; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  #dcDeck:active { transform: scale(.93); }
+  #dcDeckCount {
+    position: absolute; right: -12px; top: -12px; z-index: 7;
+    min-width: 26px; height: 26px; border-radius: 13px; padding: 0 6px;
+    background: #f6c90e; color: #5b3a00; font-weight: 900; font-size: .8rem;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.4);
+  }
+  .dc-fly {
+    position: absolute; z-index: 30; width: 56px; height: 78px; border-radius: 9px;
+    background: linear-gradient(135deg, #9b59b6, #6c3483);
+    border: 2px solid #f7f1de; box-shadow: 0 4px 10px rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center;
+    color: #f6c90e; font-size: 1.6rem; font-weight: 900;
+    pointer-events: none;
+    transition: transform .75s ease-in, opacity .75s ease-in;
   }
   #devHand { display: flex; flex-wrap: wrap; gap: 6px; }
   #devHand:not(:empty) { margin-top: 8px; }
@@ -216,7 +238,10 @@
       <div id="rollBadge" style="display:none"></div>
       <div id="zoomHint">pinch to zoom · double-tap to reset</div>
       <button class="btn" id="restartBtn" title="Restart game">🔄</button>
-      <div id="timerWrap"><div id="timerBar"></div><span id="timerText"></span></div>
+      <div id="dcDeck" title="Dev card deck — tap to buy">
+        <div class="dc-cardback"></div><div class="dc-cardback"></div><div class="dc-cardback"><span>?</span></div>
+        <div id="dcDeckCount">25</div>
+      </div>
     </div>
     <div id="panel">
       <div id="offerBox"></div>
@@ -230,7 +255,7 @@
           <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
         </div>
         <div class="pcard"><strong id="resTitle">Resources</strong><div id="resBar"></div></div>
-        <div class="btnrow"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
+        <div class="btnrow"><div id="endTurnWrap"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div></div>
         <div id="logWrap" style="display:none"><div id="log"></div></div>
       </div>
       <div class="tabpane" id="pane-build">
@@ -362,6 +387,7 @@ function portRate(pi,res){
 let S=null;
 function newGame(playerNames,botFlags){
   clearSave();
+  lastDeckSize=-1;
   const b=buildBoardData();
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
@@ -1097,16 +1123,46 @@ function onTurnTimeout(){
 }
 function tickTimer(){
   if(typeof document==='undefined') return;
-  const wrap=$('timerWrap');
-  if(!wrap||!S) return;
+  const wrap=$('endTurnWrap'), btn=$('endTurnBtn');
+  if(!wrap||!btn||!S) return;
   const key=S.turn+':'+S.phase;
   if(key!==timerTurnKey) resetTimer();
-  if(!timerActive()){ wrap.style.display='none'; return; }
+  const active=timerActive();
+  wrap.classList.toggle('on', active);
+  if(!active){ btn.innerHTML='✅ End Turn'; return; }
   const msLeft=timerDeadline-Date.now();
-  if(msLeft<=0){ wrap.style.display='none'; onTurnTimeout(); return; }
-  wrap.style.display='block';
-  $('timerBar').style.width=(msLeft/(TURN_SECONDS*1000)*100)+'%';
-  $('timerText').textContent=Math.ceil(msLeft/1000)+'s';
+  if(msLeft<=0){ wrap.classList.remove('on'); onTurnTimeout(); return; }
+  wrap.style.setProperty('--tp',(msLeft/(TURN_SECONDS*1000)*100)+'%');
+  btn.innerHTML='✅ End Turn · '+Math.ceil(msLeft/1000)+'s';
+}
+
+/* ================= Dev-card deck on the board ================= */
+let lastDeckSize=-1;
+function syncDeck(){
+  const deck=$('dcDeck');
+  if(!deck||!S){ return; }
+  const n=S.devDeck.length;
+  $('dcDeckCount').textContent=n;
+  deck.style.display=(S.phase==='gameover')?'none':'block';
+  deck.style.opacity=n===0?'.45':'1';
+  if(lastDeckSize>=0&&n<lastDeckSize) animateCardPickup();
+  lastDeckSize=n;
+}
+function animateCardPickup(){
+  const deck=$('dcDeck'), wrapEl=$('boardWrap');
+  if(!deck||!wrapEl) return;
+  const r=deck.getBoundingClientRect(), w=wrapEl.getBoundingClientRect();
+  const c=document.createElement('div');
+  c.className='dc-fly'; c.textContent='?';
+  c.style.left=(r.left-w.left)+'px';
+  c.style.top=(r.top-w.top)+'px';
+  wrapEl.appendChild(c);
+  const dx=w.width-(r.left-w.left)-70;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    c.style.transform=`translate(${dx}px,-34px) rotate(18deg)`;
+    c.style.opacity='0';
+  }));
+  setTimeout(()=>c.remove(), 850);
 }
 
 /* ================= UI event handlers ================= */
@@ -1436,7 +1492,7 @@ function showRules(){
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
-    <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — run out of time and the game rolls (if you haven't) and passes your turn automatically.</li>
+    <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — the ring around <b>End Turn</b> counts down. Run out and the game rolls (if you haven't) and passes your turn.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
@@ -1686,7 +1742,7 @@ function renderLog(){
 function setHint(t){ if(typeof document==='undefined') return; const h=$('hint'); if(h) h.innerHTML=t; }
 function refresh(){
   if(!S) return;
-  renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox();
+  renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox(); syncDeck();
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
@@ -1897,6 +1953,7 @@ function boot(){
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
   $('offerTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') offerTradeUI(); };
   $('buyDevBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
+  $('dcDeck').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   initBoardGestures();
