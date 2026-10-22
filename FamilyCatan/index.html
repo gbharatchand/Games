@@ -64,7 +64,7 @@
     #app { gap: 6px; padding: 6px; }
     #boardWrap { height: 94vh; }
     #board { width: 100%; height: 100%; max-height: none; }
-    #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; overflow-y: visible; }
+    #panel { flex: 0 0 260px; max-height: 94vh; padding: 10px; gap: 8px; overflow-y: auto; }
     #tabBar { display: flex; gap: 6px; flex-shrink: 0; }
     .tabbtn {
       flex: 1; border: 2px solid #d8cba4; background: #efe8d2; border-radius: 10px;
@@ -111,7 +111,7 @@
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   #diceArea { display: flex; align-items: center; gap: 12px; }
-  #rollBtn { font-size: 1.22rem; padding: 12px 16px; width: 62%; margin: 0 auto; display: block; }
+  #rollBtn { font-size: 1.12rem; padding: 0 10px; width: 48%; height: 57px; margin: 0 auto; display: block; }
   #rollBadge.rolling { animation: shake .3s ease infinite; }
   @keyframes shake {
     0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
@@ -215,9 +215,9 @@
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
   #timerWrap { display: none; }
-  #endTurnWrap { flex: 1; border-radius: 14px; min-width: 0; }
+  #endTurnWrap { flex: none; width: 48%; margin: 0 auto; border-radius: 14px; min-width: 0; }
   #endTurnWrap.on { padding: 3px; background: conic-gradient(#f6c90e var(--tp,100%), rgba(120,90,20,.28) 0); }
-  #endTurnWrap .btn { width: 100%; }
+  #endTurnWrap .btn { width: 100%; height: 54px; font-size: 1.02rem; padding: 0 8px; }
   #playerStats { display: flex; flex-direction: column; gap: 6px; }
   .pstat {
     display: flex; align-items: center; gap: 7px;
