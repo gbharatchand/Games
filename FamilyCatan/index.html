@@ -137,6 +137,9 @@
   .vspot { fill: rgba(255,255,255,.55); stroke: #fff; stroke-width: 2; cursor: pointer; }
   .vspot:hover { fill: var(--gold); }
   .vspot.city { fill: rgba(255,190,40,.5); stroke: var(--gold); stroke-width: 3; }
+  .vspot.city.cant { fill: rgba(150,150,150,.35); stroke: #aaa; stroke-dasharray: 4 4; }
+  #toast { position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%) translateY(16px); background: rgba(20,24,32,.93); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: .92rem; font-weight: 600; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 60; max-width: 88vw; text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   .profileBar { display:flex; align-items:center; gap:10px; justify-content:center; margin:10px 0 2px; flex-wrap:wrap; }
   .profileBar .pavatar { width:34px; height:34px; border-radius:50%; }
   .profileBar .pnote { font-size:.85rem; opacity:.75; }
@@ -304,6 +307,7 @@
   </div>
 </div>
 <div id="overlayRoot"></div>
+<div id="toast"></div>
 <script>
 'use strict';
 /* ================= Constants & geometry (tested) ================= */
@@ -1594,9 +1598,32 @@ function onEdgeTap(k){
   uiEdgeClick(k);
 }
 // Tap-to-build: tapping an auto-highlighted spot builds directly, no Build button needed (host validates).
+let toastTimer=null;
+function toast(msg){
+  if(typeof document==='undefined') return;
+  const t=$('toast'); if(!t) return;
+  t.textContent=msg; t.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ t.classList.remove('show'); },2600);
+}
+function affordHint(what){
+  const costs={road:COSTS.road, ship:COSTS.ship, settlement:COSTS.settlement, city:COSTS.city};
+  const cost=costs[what]; if(!cost||!S) return;
+  const idx=NET.mode==='local'?S.turn:NET.myIdx;
+  const p=S.players[idx]; if(!p) return;
+  const label={road:'🛣️ Road', ship:'⛵ Ship', settlement:'🏠 Settlement', city:'🏘️ City upgrade'}[what];
+  const missing=Object.keys(cost).filter(r=>p.res[r]<cost[r])
+    .map(r=>`${RES_ICON[r]} ${RES_NAME[r]} (have ${p.res[r]}, need ${cost[r]})`).join(', ');
+  toast(`${label}: you're missing ${missing}.`);
+}
 function onPlaceTap(what,key){
   if(!S||S.phase!=='play'||S.pending) return;
   if(!canActAs(S.turn)||isBot(S.turn)) return;
+  const costsMap={road:COSTS.road, ship:COSTS.ship, settlement:COSTS.settlement, city:COSTS.city};
+  if(costsMap[what]&&!(what==='road'&&S.freeRoads>0)){
+    const idx=NET.mode==='local'?S.turn:NET.myIdx;
+    if(!canAfford(S.players[idx],costsMap[what])){ affordHint(what); return; }
+  }
   if(NET.mode==='online'&&!NET.isHost) NET.localMode=null;
   sendOrDo({kind:'place', what:what, key:key});
 }
@@ -2204,7 +2231,7 @@ function renderBoard(){
   renderPorts(g);
   applyZoom();
   const showSettle=canPlace&&(S.mode==='setupSettlement'||(playOK&&(em0==='buildSettlement'||canAfford(S.players[S.turn],COSTS.settlement))));
-  const showCity=playOK&&(em0==='buildCity'||canAfford(S.players[S.turn],COSTS.city));
+  const showCity=playOK; // upgrade spots always show on your settlements during your turn (dimmed if unaffordable)
   if(showSettle||showCity){
     for(const k in S.vertices){
       const v=S.vertices[k];
@@ -2214,8 +2241,10 @@ function renderBoard(){
           c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexTap(k);});
         }
       }else if(showCity&&v.owner===S.turn&&v.kind==='settlement'){
-        const c=el('circle',{cx:v.x,cy:v.y,r:15,class:'vspot city'},g);
+        const affordCity=canAfford(S.players[S.turn],COSTS.city);
+        const c=el('circle',{cx:v.x,cy:v.y,r:21,class:'vspot city'+(affordCity?'':' cant')},g);
         c.addEventListener('click',ev=>{ev.stopPropagation();
+          if(!canAfford(S.players[S.turn],COSTS.city)){ affordHint('city'); return; }
           if(effMode()==='buildCity') onVertexTap(k); else onPlaceTap('city',k);});
       }else if(showSettle&&v.owner===-1&&settleValid(v,S.turn)){
         const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
