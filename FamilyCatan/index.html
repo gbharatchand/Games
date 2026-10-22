@@ -1136,9 +1136,12 @@ function doEndTurn(){
 
 /* ================= Turn timer (60s, auto-pass) ================= */
 const TURN_SECONDS=60;
-let timerDeadline=0, timerTurnKey='';
+let timerDeadline=0, timerTurnKey='', timerWasActive=false;
+// true while any modal overlay is open (discard/steal/dev-card prompts, trades, …)
+// the turn timer must not auto-pass underneath an open prompt.
+let modalOpenFlag=false;
 function timerActive(){
-  return S&&S.phase==='play'&&!isBot(S.turn)&&!S.pending&&S.mode!=='moveRobber';
+  return S&&S.phase==='play'&&!isBot(S.turn)&&!S.pending&&S.mode!=='moveRobber'&&!modalOpenFlag;
 }
 function resetTimer(){
   timerTurnKey=S.turn+':'+S.phase;
@@ -1148,7 +1151,7 @@ function onTurnTimeout(){
   // only the authority auto-passes: local page, or online host
   const authority=NET.mode==='local'||(NET.mode==='online'&&NET.isHost);
   if(!authority) return;
-  if(S.phase!=='play'||isBot(S.turn)||S.pending||S.mode==='moveRobber') return;
+  if(S.phase!=='play'||isBot(S.turn)||S.pending||S.mode==='moveRobber'||modalOpenFlag) return;
   const idx=S.turn;
   if(!S.rolled) hostApplyAct(idx,{kind:'roll'});
   if(S.pending||S.mode==='moveRobber'){ resetTimer(); return; } // roll opened a 7-flow; give fresh time
@@ -1162,6 +1165,8 @@ function tickTimer(){
   const key=S.turn+':'+S.phase;
   if(key!==timerTurnKey) resetTimer();
   const active=timerActive();
+  if(active&&!timerWasActive) resetTimer(); // fresh 60s when the timer re-arms (e.g. a prompt just closed)
+  timerWasActive=active;
   wrap.classList.toggle('on', active);
   if(!active){ btn.innerHTML='✅ End Turn'; return; }
   const msLeft=timerDeadline-Date.now();
@@ -1287,12 +1292,13 @@ const svgNS='http://www.w3.org/2000/svg';
 const $=id=>document.getElementById(id);
 function el(tag,attrs,parent){ const e=document.createElementNS(svgNS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e; }
 function overlay(html){
+  modalOpenFlag=true;
   const root=$('overlayRoot');
   const ov=document.createElement('div'); ov.className='overlay';
   ov.innerHTML=`<div class="card">${html}</div>`;
   root.appendChild(ov); return ov;
 }
-function closeOverlay(){ $('overlayRoot').innerHTML=''; }
+function closeOverlay(){ modalOpenFlag=false; $('overlayRoot').innerHTML=''; }
 let diceUid=0;
 function diceSVG(v){
   // 2.5D die: white face, black pips, soft drop shadow for depth
