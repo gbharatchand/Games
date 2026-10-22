@@ -143,6 +143,9 @@
   .btn.small { padding:4px 12px; font-size:.85rem; }
   .espot { stroke: rgba(255,255,255,.7); stroke-width: 10; cursor: pointer; fill: none; }
   .espot:hover { stroke: var(--gold); }
+  .sspot { stroke: rgba(127,231,255,.85); stroke-width: 10; cursor: pointer; fill: none; stroke-dasharray: 4 8; stroke-linecap: round; }
+  .sspot:hover { stroke: var(--gold); }
+  .espot.both { stroke: rgba(160,255,190,.8); }
   .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
   .settlement, .city { pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
   .overlay {
@@ -282,6 +285,7 @@
       <div class="tabpane" id="pane-build">
         <div class="pcard"><strong>Build</strong><div id="buildBtns">
           <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
+          <button class="btn" id="buildShip" style="display:none">⛵ Ship<br><small>1🪵 1🐑</small></button>
           <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
           <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
           <button class="btn" id="buyDevBtn">🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small></button>
@@ -313,9 +317,11 @@ const TERRAIN = {
   brick: { color:'#b5542d', res:'brick', icon:'🧱' },
   ore:   { color:'#7d8590', res:'ore',   icon:'⛰️' },
   desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
+  sea:   { color:'#3d7dc4', res:null,    icon:'' },
 };
 const COSTS = {
   road:      { brick:1, wood:1 },
+  ship:      { wood:1, sheep:1 },
   settlement:{ brick:1, wood:1, sheep:1, wheat:1 },
   city:      { wheat:2, ore:3 },
 };
@@ -356,16 +362,65 @@ function makeCode(){ const c='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(le
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ================= Board data (tested) ================= */
-function buildBoardData(){
-  const rows=[{r:0,qs:[0,1,2]},{r:1,qs:[-1,0,1,2]},{r:2,qs:[-2,-1,0,1,2]},{r:3,qs:[-2,-1,0,1]},{r:4,qs:[-2,-1,0]}];
-  const terrains=shuffle(['wood','wood','wood','wood','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','ore','ore','ore','desert']);
-  const numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12]);
-  const hexes=[]; let id=0;
-  rows.forEach(row=>row.qs.forEach(q=>{
-    const t=terrains[id];
-    hexes.push({ id:id, q:q, r:row.r, terrain:t, number: t==='desert'?null:numbers.pop() });
+function buildBoardData(variant){
+  const seaMode = variant==='sea';
+  let cells; // [{q,r,land}]
+  let terrains, numbers;
+  if(seaMode){
+    // Seafarers "Heading for New Shores": a main island + 3 outer islands in a sea frame
+    const LAND=[
+      [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[-2,2],[-1,2],[0,2],[1,2],[-2,3],[-1,3],[0,3], // main island (14)
+      [4,0],[5,0],[4,1],   // island B (3)
+      [5,3],[5,4],        // island D (2)
+      [2,5],[3,5],[3,6],  // island C (3)
+    ];
+    const landSet=new Set(LAND.map(c=>c[0]+','+c[1]));
+    const seaSet=new Set();
+    const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+    LAND.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=(q+dq)+','+(r+dr); if(!landSet.has(k)) seaSet.add(k); }));
+    cells=LAND.map(([q,r])=>({q,r,land:true}));
+    [...seaSet].forEach(k=>{ const [q,r]=k.split(',').map(Number); cells.push({q,r,land:false}); });
+    terrains=shuffle(['wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','brick','ore','ore','ore','desert']);
+    numbers=shuffle([2,3,3,3,4,4,5,5,5,6,6,8,8,9,9,9,10,10,11,11,12]);
+  }else{
+    const rows=[{r:0,qs:[0,1,2]},{r:1,qs:[-1,0,1,2]},{r:2,qs:[-2,-1,0,1,2]},{r:3,qs:[-2,-1,0,1]},{r:4,qs:[-2,-1,0]}];
+    cells=[];
+    rows.forEach(row=>row.qs.forEach(q=>cells.push({q:q, r:row.r, land:true})));
+    terrains=shuffle(['wood','wood','wood','wood','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','ore','ore','ore','desert']);
+    numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12]);
+  }
+  const hexes=[]; let id=0; let ti=0;
+  cells.forEach(c=>{
+    if(!c.land){ hexes.push({ id:id, q:c.q, r:c.r, terrain:'sea', number:null, island:-1 }); id++; return; }
+    const t=terrains[ti++];
+    hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:numbers.pop(), island:0 });
     id++;
-  }));
+  });
+  // ---- Islands: flood-fill land hexes by axial edge-adjacency; biggest = main island ----
+  let mainIsland=0;
+  if(seaMode){
+    const landByKey={};
+    hexes.forEach(h=>{ if(h.terrain!=='sea') landByKey[h.q+','+h.r]=h; });
+    const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+    let isl=0; const sizes={};
+    const seen=new Set();
+    hexes.forEach(h=>{
+      if(h.terrain==='sea'||seen.has(h.id)) return;
+      const queue=[h]; seen.add(h.id); let size=0;
+      while(queue.length){
+        const c=queue.pop(); c.island=isl; size++;
+        DIRS.forEach(([dq,dr])=>{ const n=landByKey[(c.q+dq)+','+(c.r+dr)]; if(n&&!seen.has(n.id)){ seen.add(n.id); queue.push(n); } });
+      }
+      sizes[isl]=size; isl++;
+    });
+    mainIsland=+Object.keys(sizes).sort((a,b)=>sizes[b]-sizes[a])[0];
+    // the desert (and the robber) belong on the main island — swap if it landed elsewhere
+    const des=hexes.find(h=>h.terrain==='desert');
+    if(des&&des.island!==mainIsland){
+      const host=hexes.find(h=>h.island===mainIsland&&h.terrain==='sheep')||hexes.find(h=>h.island===mainIsland&&h.terrain!=='desert');
+      if(host){ host.terrain='desert'; const n=host.number; host.number=null; des.terrain='sheep'; des.number=n; }
+    }
+  }
   const vertices={}, edges={};
   hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
@@ -382,17 +437,32 @@ function buildBoardData(){
     }
   });
   const robberHex = hexes.find(h=>h.terrain==='desert').id;
-  // ---- Ports: coastal vertices (touching <=2 hexes), 4 evenly spaced, 2:1 rates ----
+  // ---- Ports: coastal vertices, evenly spaced by angle, 2:1 rates ----
   const boardCx = hexes.reduce((s,h)=>{ const c=hexCenter(h.q,h.r); return { x:s.x+c.x/hexes.length, y:s.y+c.y/hexes.length }; },{x:0,y:0});
-  const coastal = Object.values(vertices).filter(v=>v.hexes.length<=2)
-    .sort((a,b)=>Math.atan2(a.y-boardCx.y,a.x-boardCx.x)-Math.atan2(b.y-boardCx.y,b.x-boardCx.x));
-  const portRes = shuffle(['brick','wood','wheat','ore']);
-  const ports = [];
-  for(let i=0;i<4 && coastal.length;i++){
-    const v = coastal[Math.floor(i*coastal.length/4)%coastal.length];
-    if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
+  let ports;
+  if(seaMode){
+    // Seafarers: 5 ports (one per resource) on vertices touching both land and sea
+    const coastalV = Object.values(vertices).filter(v=>{
+      const ts=v.hexes.map(hid=>hexes[hid].terrain);
+      return ts.some(t=>t!=='sea') && ts.some(t=>t==='sea');
+    }).sort((a,b)=>Math.atan2(a.y-boardCx.y,a.x-boardCx.x)-Math.atan2(b.y-boardCx.y,b.x-boardCx.x));
+    const portRes = shuffle(['brick','wood','wheat','ore','sheep']);
+    ports = [];
+    for(let i=0;i<5 && coastalV.length;i++){
+      const v = coastalV[Math.floor(i*coastalV.length/5)%coastalV.length];
+      if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
+    }
+  }else{
+    const coastal = Object.values(vertices).filter(v=>v.hexes.length<=2)
+      .sort((a,b)=>Math.atan2(a.y-boardCx.y,a.x-boardCx.x)-Math.atan2(b.y-boardCx.y,b.x-boardCx.x));
+    const portRes = shuffle(['brick','wood','wheat','ore']);
+    ports = [];
+    for(let i=0;i<4 && coastal.length;i++){
+      const v = coastal[Math.floor(i*coastal.length/4)%coastal.length];
+      if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
+    }
   }
-  return { hexes, vertices, edges, robberHex, ports, boardCx };
+  return { hexes, vertices, edges, robberHex, ports, boardCx, mainIsland };
 }
 function portRate(pi,res){
   // 2:1 if the player owns a settlement/city on a matching port, else 4:1
@@ -406,17 +476,22 @@ function portRate(pi,res){
 
 /* ================= Game state ================= */
 let S=null;
-function newGame(playerNames,botFlags){
+function newGame(playerNames,botFlags,variant){
   clearSave();
   lastDeckSize=-1;
-  const b=buildBoardData();
+  const b=buildBoardData(variant);
   S={
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
     ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
+    variant: variant==='sea'?'sea':'classic',
+    mainIsland: b.mainIsland||0,
+    winVP: variant==='sea'?13:10,
+    chitAt:{},
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
       longest:0, hasLongest:false, knights:0, hasLargestArmy:false, dc:false,
+      chitVP:0, islandsWon:[],
     })),
     turn:0, phase:'setup', dice:[1,1], rolled:false,
     setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
@@ -438,6 +513,7 @@ function vp(p){
   for(const k in S.vertices){ const vtx=S.vertices[k]; if(vtx.owner===i) v+= vtx.kind==='city'?2:1; }
   if(p.hasLongest) v+=2;
   if(p.hasLargestArmy) v+=2;
+  if(p.chitVP) v+=p.chitVP;
   if(p.dev) v+=p.dev.filter(c=>c.t==='vp').length;
   return v;
 }
@@ -664,7 +740,8 @@ function applyAct(idx,a){
       const e=S.edges[a.key];
       if(!e||e.owner!==-1) return false;
       if(!(e.a===S.setupVertex||e.b===S.setupVertex)) return false;
-      e.owner=idx;
+      if(S.variant==='sea'&&!edgeBordersLand(e)) return false;
+      e.owner=idx; e.kind='road';
       addLog(`🛣️ ${p.name} placed a road.`);
       const round2=S.setupIdx>=S.players.length;
       if(round2){
@@ -690,13 +767,30 @@ function applyAct(idx,a){
         if(!free&&!canAfford(p,COSTS.road)) return false;
         if(!roadValid(e,idx)) return false;
         if(free) S.freeRoads--; else payCost(p,COSTS.road);
-        e.owner=idx;
+        e.owner=idx; e.kind='road';
         addLog(`🛣️ ${p.name} built a road${free?' (Road Building)':''}.`);
+      }else if(a.what==='ship'){
+        const e=S.edges[a.key];
+        if(!e||e.owner!==-1) return false;
+        if(!canAfford(p,COSTS.ship)) return false;
+        if(!shipValid(e,idx)) return false;
+        payCost(p,COSTS.ship);
+        e.owner=idx; e.kind='ship';
+        addLog(`⛵ ${p.name} built a ship.`);
       }else if(a.what==='settlement'){
         const v=S.vertices[a.key];
         if(!v||!canAfford(p,COSTS.settlement)||!settleValid(v,idx)) return false;
         payCost(p,COSTS.settlement); v.owner=idx; v.kind='settlement';
         addLog(`🏠 ${p.name} built a settlement.`);
+        if(S.variant==='sea'){
+          // Seafarers island bonus: +2 VP for your first settlement on each new island
+          for(const isl of vertexIslands(v)){
+            if(isl!==S.mainIsland&&!(p.islandsWon||[]).includes(isl)){
+              p.islandsWon.push(isl); p.chitVP=(p.chitVP||0)+2; S.chitAt[a.key]=idx;
+              addLog(`⭐ ${p.name} discovered a new island! +2 VP`);
+            }
+          }
+        }
       }else if(a.what==='city'){
         const v=S.vertices[a.key];
         if(!v||v.owner!==idx||v.kind!=='settlement'||!canAfford(p,COSTS.city)) return false;
@@ -793,6 +887,7 @@ function applyAct(idx,a){
     }
     case 'moveRobber':{
       if(S.mode!=='moveRobber'||a.hex===S.robberHex) return false;
+      if(!S.hexes[a.hex]||S.hexes[a.hex].terrain==='sea') return false; // robber stays on land
       // only current player moves robber
       doMoveRobber(a.hex);
       return true;
@@ -826,13 +921,42 @@ function afterChange(){
 }
 
 /* ================= Placement validity (host-side) ================= */
+function vertexTouchesLand(v){ return v.hexes.some(hid=>S.hexes[hid].terrain!=='sea'); }
+function vertexIslands(v){
+  const s=new Set();
+  v.hexes.forEach(hid=>{ const h=S.hexes[hid]; if(h.terrain!=='sea') s.add(h.island); });
+  return [...s];
+}
 function setupVertexValid(v,idx){
   if(v.owner!==-1) return false;
+  if(S.variant==='sea'){
+    if(!vertexTouchesLand(v)) return false;
+    // Seafarers setup: starting settlements go on the main island only
+    if(!vertexIslands(v).includes(S.mainIsland)) return false;
+  }
   for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
   return true;
 }
+function edgeHexes(e){
+  const A=S.vertices[e.a].hexes, B=S.vertices[e.b].hexes;
+  return A.filter(hid=>B.includes(hid)).map(hid=>S.hexes[hid]);
+}
+function edgeBordersSea(e){ return edgeHexes(e).some(h=>h.terrain==='sea'); }
+function edgeBordersLand(e){ return edgeHexes(e).some(h=>h.terrain!=='sea'); }
 function roadValid(e,idx){
   if(e.owner!==-1) return false;
+  if(S.variant==='sea'&&!edgeBordersLand(e)) return false; // no roads on open water
+  const a=S.vertices[e.a], b=S.vertices[e.b];
+  if(a.owner===idx||b.owner===idx) return true;
+  for(const ek in S.edges){
+    const o=S.edges[ek];
+    if(o.owner===idx&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+  }
+  return false;
+}
+function shipValid(e,idx){
+  if(S.variant!=='sea'||e.owner!==-1) return false;
+  if(!edgeBordersSea(e)) return false; // ships need water
   const a=S.vertices[e.a], b=S.vertices[e.b];
   if(a.owner===idx||b.owner===idx) return true;
   for(const ek in S.edges){
@@ -843,6 +967,7 @@ function roadValid(e,idx){
 }
 function settleValid(v,idx){
   if(v.owner!==-1) return false;
+  if(S.variant==='sea'&&!vertexTouchesLand(v)) return false;
   for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
   for(const nb of v.neighbors){ if(S.edges[edgeKey(v.key,nb)].owner===idx) return true; }
   return false;
@@ -961,8 +1086,24 @@ function bestSettleVertex(i){
   let best=null,bs=-1;
   for(const k in S.vertices){ const v=S.vertices[k];
     if(!settleValid(v,i)) continue;
-    const s=vertexScore(v);
+    let s=vertexScore(v);
+    if(S.variant==='sea'){
+      // exploring a new island is worth a lot (+2 VP chit)
+      const p=S.players[i];
+      if(vertexIslands(v).some(isl=>isl!==S.mainIsland&&!(p.islandsWon||[]).includes(isl))) s+=8;
+    }
     if(s>bs){ bs=s; best=k; } }
+  return best;
+}
+function bestShipEdge(i){
+  let best=null,bs=-1;
+  for(const ek in S.edges){ const e=S.edges[ek];
+    if(!shipValid(e,i)) continue;
+    let s=Math.random()*2;
+    [e.a,e.b].forEach(vk=>{ const v=S.vertices[vk];
+      if(v.owner===-1&&vertexTouchesLand(v)) s=Math.max(s,vertexScore(v)+ (vertexIslands(v).some(isl=>isl!==S.mainIsland)?4:0));
+    });
+    if(s>bs){ bs=s; best=ek; } }
   return best;
 }
 function bestRoadEdge(i){
@@ -1012,6 +1153,10 @@ function botTryBuild(i){
   if(canAfford(p,COSTS.road)){
     const ek=bestRoadEdge(i);
     if(ek){ hostApplyAct(i,{kind:'place',what:'road',key:ek}); return true; }
+  }
+  if(S.variant==='sea'&&canAfford(p,COSTS.ship)){
+    const ek=bestShipEdge(i);
+    if(ek){ hostApplyAct(i,{kind:'place',what:'ship',key:ek}); return true; }
   }
   const bt=botBankTrade(i);
   if(bt){ hostApplyAct(i,{kind:'bankTrade',give:bt.give,get:bt.get}); return true; }
@@ -1105,7 +1250,7 @@ function updateLongest(){
   S.players.forEach((p,i)=>{
     const had=p.hasLongest;
     p.hasLongest=(!tie&&i===holder);
-    if(p.hasLongest&&!had) addLog(`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
+    if(p.hasLongest&&!had) addLog(S.variant==='sea'?`⛵ ${p.name} takes Longest Trade Route (+2 VP)!`:`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
   });
 }
 function updateLargestArmy(){
@@ -1120,7 +1265,7 @@ function updateLargestArmy(){
 }
 function checkWin(){
   for(let i=0;i<S.players.length;i++){
-    if(vp(S.players[i])>=WIN_VP){
+    if(vp(S.players[i])>=(S.winVP||WIN_VP)){
       S.phase='gameover'; S.winner=i; S.mode=null; S.pending=null; S.offer=null;
       addLog(`🏆 ${S.players[i].name} wins with ${vp(S.players[i])} VP!`);
       return true;
@@ -1233,6 +1378,7 @@ function uiEdgeClick(k){
 }
 function uiHexClick(id){
   if(!S||S.mode!=='moveRobber'||id===S.robberHex) return;
+  if(S.hexes[id]&&S.hexes[id].terrain==='sea') return;
   if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'moveRobber', hex:id});
 }
@@ -1251,6 +1397,7 @@ function uiSetBuildMode(m){
   }
   const hints={
     buildRoad:'Tap a highlighted edge to build a road (1🧱 1🪵).',
+    buildShip:'Tap a highlighted water edge to build a ship (1🪵 1🐑). Ships sail your trade route to new islands!',
     buildSettlement:'Tap a highlighted spot to build a settlement (1🧱 1🪵 1🐑 1🌾).',
     buildCity:'Tap one of your settlements to upgrade it to a city (2🌾 3⛰️).',
   };
@@ -1285,6 +1432,20 @@ function onPlaceTap(what,key){
   if(!canActAs(S.turn)||isBot(S.turn)) return;
   if(NET.mode==='online'&&!NET.isHost) NET.localMode=null;
   sendOrDo({kind:'place', what:what, key:key});
+}
+// A coastal edge can hold a road OR a ship — ask which one.
+function showBuildChooser(ek){
+  const free=S.freeRoads>0;
+  const ov=overlay(`<h2>Build here?</h2>
+    <p>This coastal spot can take a road or a ship:</p>
+    <div class="btnrow">
+      <button class="btn" id="chRoad">🛣️ Road<br><small>${free?'FREE (Road Building)':'1🧱 1🪵'}</small></button>
+      <button class="btn primary" id="chShip">⛵ Ship<br><small>1🪵 1🐑</small></button>
+    </div>
+    <div class="btnrow"><button class="btn" id="chCancel">Cancel</button></div>`);
+  ov.querySelector('#chRoad').onclick=()=>{ closeOverlay(); onPlaceTap('road',ek); };
+  ov.querySelector('#chShip').onclick=()=>{ closeOverlay(); onPlaceTap('ship',ek); };
+  ov.querySelector('#chCancel').onclick=closeOverlay;
 }
 
 /* ================= Modals & prompts ================= */
@@ -1540,6 +1701,8 @@ function showRules(){
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
     <li>🛣️ <b>Longest Road</b> (5+ roads) and ⚔️ <b>Largest Army</b> (3+ Knights) each give <b>+2 VP</b> — they can change hands during the game.</li>
+    <li>⛵ <b>Seafarers mode</b> (pick it on the main menu): a bigger map of islands! Build <b>ships</b> (1🪵 1🐑) on the water to reach new islands — roads and ships together count for the <b>Longest Trade Route</b>. Starting settlements go on the main island.</li>
+    <li>⭐ <b>Discovery bonus:</b> in Seafarers, your first settlement on each new island earns <b>+2 VP</b> (marked ⭐ on the board). First to <b>13 VP</b> wins!</li>
     <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — the ring around <b>End Turn</b> counts down. Run out and the game rolls (if you haven't) and passes your turn.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
@@ -1702,9 +1865,12 @@ function renderBoard(){
   });
   const pad=105;
   svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
+  if(S.variant==='sea'){
+    el('rect',{x:minX-pad, y:minY-pad, width:maxX-minX+pad*2, height:maxY-minY+pad*2, fill:'#2f6db3'},g);
+  }
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
-    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex?' robber-ok':'')},g);
+    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex&&h.terrain!=='sea'?' robber-ok':'')},g);
     hg.addEventListener('click',()=>uiHexClick(h.id));
     // 2.5D: extruded tile base beneath the top face
     const pts=corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
@@ -1731,8 +1897,14 @@ function renderBoard(){
     const e=S.edges[ek];
     if(e.owner>=0){
       const a=S.vertices[e.a], b=S.vertices[e.b];
-      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':8},g);
-      el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:'rgba(0,0,0,.25)','stroke-width':8,'stroke-dasharray':'2 10'},g);
+      if(e.kind==='ship'){
+        el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':6},g);
+        const st=el('text',{x:(a.x+b.x)/2, y:(a.y+b.y)/2+7, 'text-anchor':'middle','font-size':'19'},g);
+        st.textContent='⛵';
+      }else{
+        el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:S.players[e.owner].color,'stroke-width':8},g);
+        el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'road',stroke:'rgba(0,0,0,.25)','stroke-width':8,'stroke-dasharray':'2 10'},g);
+      }
     }
   }
   const canPlace=canActAs(S.turn);
@@ -1744,12 +1916,26 @@ function renderBoard(){
     for(const ek in S.edges){
       const e=S.edges[ek];
       const ok=S.mode==='setupRoad'?(e.owner===-1&&edgeValidUI(e)):(e.owner===-1&&roadValid(e,S.turn));
-      if(ok){
+      // coastal edges that can also take a ship are rendered by the ship-spot pass (tap asks road or ship)
+      const shipToo=playOK&&S.variant==='sea'&&e.owner===-1&&shipValid(e,S.turn)&&canAfford(S.players[S.turn],COSTS.ship);
+      if(ok&&!shipToo){
         const a=S.vertices[e.a], b=S.vertices[e.b];
         const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'espot'},g);
         l.addEventListener('click',ev=>{ev.stopPropagation();
           if(S.mode==='setupRoad'||effMode()==='buildRoad') onEdgeTap(ek); else onPlaceTap('road',ek);});
       }
+    }
+  }
+  const showShips=playOK&&S.variant==='sea'&&canAfford(S.players[S.turn],COSTS.ship);
+  if(showShips){
+    for(const ek in S.edges){
+      const e=S.edges[ek];
+      if(e.owner!==-1||!shipValid(e,S.turn)) continue;
+      const a=S.vertices[e.a], b=S.vertices[e.b];
+      const roadToo=roadValid(e,S.turn)&&(S.freeRoads>0||canAfford(S.players[S.turn],COSTS.road));
+      const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:roadToo?'espot both':'sspot'},g);
+      l.addEventListener('click',ev=>{ev.stopPropagation();
+        if(roadToo) showBuildChooser(ek); else onPlaceTap('ship',ek);});
     }
   }
   for(const k in S.vertices){
@@ -1758,6 +1944,13 @@ function renderBoard(){
       const col=S.players[v.owner].color;
       if(v.kind==='city') drawHouse(g,v.x,v.y,30,col,'city',true);
       else drawHouse(g,v.x,v.y,24,col,'settlement',false);
+    }
+  }
+  if(S.chitAt){
+    for(const k in S.chitAt){
+      const v=S.vertices[k]; if(!v) continue;
+      const t=el('text',{x:v.x+17, y:v.y+19, 'text-anchor':'middle','font-size':'15'},g);
+      t.textContent='⭐';
     }
   }
   renderPorts(g);
@@ -1860,6 +2053,12 @@ function refresh(){
   const meRes=(NET.mode==='local'?cur():(S.players[NET.myIdx]||{res:{}})).res||{};
   const afford=c=>Object.keys(c).every(r=>(meRes[r]||0)>=c[r]);
   $('buildRoad').classList.toggle('cant',canBuild&&!afford(COSTS.road));
+  const shipBtn=$('buildShip');
+  if(shipBtn){
+    const sea=S.variant==='sea';
+    shipBtn.style.display=sea?'':'none';
+    if(sea){ shipBtn.disabled=!canBuild; shipBtn.classList.toggle('cant',canBuild&&!afford(COSTS.ship)); }
+  }
   $('buildSettle').classList.toggle('cant',canBuild&&!afford(COSTS.settlement));
   $('buildCity').classList.toggle('cant',canBuild&&!afford(COSTS.city));
   $('buyDevBtn').classList.toggle('cant',canBuild&&!(S.devDeck&&S.devDeck.length&&afford(DEV_COST)));
@@ -1934,6 +2133,8 @@ function profileBarHtml(){
 }
 
 /* ================= Menu & lobby ================= */
+let menuVariant='classic';
+try{ menuVariant=localStorage.getItem('familycatan-variant')==='sea'?'sea':'classic'; }catch(e){}
 function showMenu(){
   const save=loadSave();
   let resumeHtml='';
@@ -1945,7 +2146,11 @@ function showMenu(){
     }
   }
   const ov=overlay(`<h2>🏝️ Family Catan</h2>
-    <p>2–4 players. Build, trade, race to 10 points!</p>
+    <p id="menuSub">2–4 players. Build, trade, race to 10 points!</p>
+    <div class="btnrow" id="mVarRow">
+      <button class="btn" id="mVarC">🏝️ Classic</button>
+      <button class="btn" id="mVarS">⛵ Seafarers</button>
+    </div>
     ${profileBarHtml()}
     ${resumeHtml}
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
@@ -1960,6 +2165,17 @@ function showMenu(){
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
+  const paintVar=()=>{
+    ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
+    ov.querySelector('#mVarS').classList.toggle('primary', menuVariant==='sea');
+    const sub=ov.querySelector('#menuSub');
+    if(sub) sub.textContent = menuVariant==='sea'
+      ? '⛵ Seafarers: sail to new islands, earn +2 VP discovery bonuses — first to 13 VP wins!'
+      : '2–4 players. Build, trade, race to 10 points!';
+  };
+  ov.querySelector('#mVarC').onclick=()=>{ menuVariant='classic'; try{ localStorage.setItem('familycatan-variant','classic'); }catch(e){} paintVar(); };
+  ov.querySelector('#mVarS').onclick=()=>{ menuVariant='sea'; try{ localStorage.setItem('familycatan-variant','sea'); }catch(e){} paintVar(); };
+  paintVar();
   const prof=loadProfile();
   if(prof){ const mn=ov.querySelector('#menuName'); if(mn) mn.value=(prof.given||prof.name||'').slice(0,12); }
   const gBtn=ov.querySelector('#gBtn');
@@ -1999,7 +2215,7 @@ function showMenu(){
       NET.mode='local'; NET.myIdx=0;
       const names=[nm], bots=[false];
       for(let k=1;k<=bn;k++){ names.push('CPU '+k); bots.push(true); }
-      newGame(names,bots);
+      newGame(names,bots,menuVariant);
       setNetStatus('solo vs CPU','on');
       setHint(`${escapeHtml(nm)}: tap a highlighted spot for your settlement.`);
       refresh();
@@ -2015,6 +2231,7 @@ function showMenu(){
     err.textContent='Creating room…';
     try{
       NET.mode='online';
+      NET.variant=menuVariant;
       const code=await hostRoom(name());
       closeOverlay();
       showLobby(true);
@@ -2063,7 +2280,7 @@ function showLocalSetup(){
     const names=[];
     for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
     closeOverlay();
-    newGame(names);
+    newGame(names,undefined,menuVariant);
     setNetStatus('same device','on');
     setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
     refresh();
@@ -2075,6 +2292,7 @@ function showLobby(isHost){
   const ov=overlay(`<h2>🌐 ${isHost?'Room created!':'Joined!'}</h2>
     <p>Share this code with family:</p>
     <div class="roomCode">${NET.code}</div>
+    ${isHost?`<p>Mode: <b>${NET.variant==='sea'?'⛵ Seafarers (first to 13 VP)':'🏝️ Classic (first to 10 VP)'}</b></p>`:''}
     <div id="lobbyList"></div>
     ${isHost?'<div class="btnrow"><button class="btn primary" id="startGameBtn">▶ Start Game</button></div>':'<p>Waiting for the host to start…</p>'}
     <p style="font-size:.8rem;color:#666">Everyone opens <b>this same page</b> and joins with the code. No accounts needed.</p>`);
@@ -2084,7 +2302,7 @@ function showLobby(isHost){
     ov.querySelector('#startGameBtn').onclick=()=>{
       if(NET.lobbyPlayers.length<2){ alert('Need at least 2 players to start.'); return; }
       const names=NET.lobbyPlayers.map(p=>p.name);
-      newGame(names);
+      newGame(names,undefined,NET.variant);
       NET.started=true; NET.myIdx=0;
       for(const idx in NET.conns){ try{ NET.conns[idx].send({t:'state', s:serializeState()}); }catch(e){} }
       closeLobbyIfOpen();
@@ -2116,6 +2334,7 @@ function boot(){
   $('rollBtn').onclick=uiRoll;
   $('endTurnBtn').onclick=uiEndTurn;
   $('buildRoad').onclick=()=>uiSetBuildMode('buildRoad');
+  $('buildShip').onclick=()=>uiSetBuildMode('buildShip');
   $('buildSettle').onclick=()=>uiSetBuildMode('buildSettlement');
   $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
