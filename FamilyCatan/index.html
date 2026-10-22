@@ -135,6 +135,7 @@
   .hex.robber-ok polygon { stroke: var(--gold); stroke-width: 4; }
   .vspot { fill: rgba(255,255,255,.55); stroke: #fff; stroke-width: 2; cursor: pointer; }
   .vspot:hover { fill: var(--gold); }
+  .vspot.city { fill: rgba(255,190,40,.5); stroke: var(--gold); stroke-width: 3; }
   .espot { stroke: rgba(255,255,255,.7); stroke-width: 10; cursor: pointer; fill: none; }
   .espot:hover { stroke: var(--gold); }
   .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
@@ -1268,6 +1269,13 @@ function onEdgeTap(k){
   }
   uiEdgeClick(k);
 }
+// Tap-to-build: tapping an auto-highlighted spot builds directly, no Build button needed (host validates).
+function onPlaceTap(what,key){
+  if(!S||S.phase!=='play'||S.pending) return;
+  if(!canActAs(S.turn)||isBot(S.turn)) return;
+  if(NET.mode==='online'&&!NET.isHost) NET.localMode=null;
+  sendOrDo({kind:'place', what:what, key:key});
+}
 
 /* ================= Modals & prompts ================= */
 const svgNS='http://www.w3.org/2000/svg';
@@ -1526,6 +1534,7 @@ function showRules(){
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
     <li>📱 <b>App:</b> use your browser's "Add to Home Screen" to launch Family Catan like an app — it even works offline.</li>
+    <li>👆 <b>Quick build:</b> on your turn, every road, settlement spot and city you can afford glows — just tap a glowing spot to build it. No buttons needed.</li>
     <li>🔍 <b>Zoom:</b> pinch the board to zoom in, drag to pan, double-tap to reset. Everything stays tappable.</li>
     <li>💾 <b>Auto-save:</b> your game is saved automatically — switch apps and come back, then resume from the menu.</li>
   </ul>
@@ -1612,7 +1621,7 @@ function resetZoom(){ ZOOM.s=1; ZOOM.tx=0; ZOOM.ty=0; applyZoom(); }
 function initBoardGestures(){
   const wrap=$('boardWrap'); if(!wrap) return;
   let pinch0=0, s0=1, tx0=0, ty0=0, cx0=0, cy0=0;
-  let panning=false, moved=false, suppressClick=false, lastTap=0, sx=0, sy=0;
+  let panning=false, moved=false, suppressClick=false, lastTap=0, lastTapX=-999, lastTapY=-999, sx=0, sy=0;
   const px2units=()=>{ const svg=$('board'); const r=svg.getBoundingClientRect(); const vb=svg.viewBox.baseVal; return vb.width/Math.max(1,r.width); };
   wrap.addEventListener('touchstart',e=>{
     if(e.touches.length===2){
@@ -1651,8 +1660,12 @@ function initBoardGestures(){
   wrap.addEventListener('touchend',e=>{
     if(e.touches.length===0){
       const now=Date.now();
-      if(!moved&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
-      lastTap=now; panning=false; pinch0=0;
+      const t=e.changedTouches&&e.changedTouches[0];
+      const tx=t?t.clientX:-999, ty=t?t.clientY:-999;
+      // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
+      const nearLast=Math.hypot(tx-lastTapX,ty-lastTapY)<48;
+      if(!moved&&nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
+      lastTap=now; lastTapX=tx; lastTapY=ty; panning=false; pinch0=0;
     }
   });
   wrap.addEventListener('click',e=>{
@@ -1712,13 +1725,19 @@ function renderBoard(){
     }
   }
   const canPlace=canActAs(S.turn);
-  if(canPlace&&(effMode()==='buildRoad'||S.mode==='setupRoad')){
+  const em0=effMode();
+  // During play, spots you can afford glow automatically — tap one to build (no Build button needed).
+  const playOK=canPlace&&S.phase==='play'&&!S.pending&&S.mode!=='moveRobber';
+  const showRoads=canPlace&&(S.mode==='setupRoad'||(playOK&&(em0==='buildRoad'||S.freeRoads>0||canAfford(S.players[S.turn],COSTS.road))));
+  if(showRoads){
     for(const ek in S.edges){
       const e=S.edges[ek];
-      if(e.owner===-1&&edgeValidUI(e)){
+      const ok=S.mode==='setupRoad'?(e.owner===-1&&edgeValidUI(e)):(e.owner===-1&&roadValid(e,S.turn));
+      if(ok){
         const a=S.vertices[e.a], b=S.vertices[e.b];
         const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'espot'},g);
-        l.addEventListener('click',ev=>{ev.stopPropagation(); onEdgeTap(ek);});
+        l.addEventListener('click',ev=>{ev.stopPropagation();
+          if(S.mode==='setupRoad'||effMode()==='buildRoad') onEdgeTap(ek); else onPlaceTap('road',ek);});
       }
     }
   }
@@ -1732,12 +1751,24 @@ function renderBoard(){
   }
   renderPorts(g);
   applyZoom();
-  if(canPlace&&(effMode()==='buildSettlement'||effMode()==='buildCity'||S.mode==='setupSettlement')){
+  const showSettle=canPlace&&(S.mode==='setupSettlement'||(playOK&&(em0==='buildSettlement'||canAfford(S.players[S.turn],COSTS.settlement))));
+  const showCity=playOK&&(em0==='buildCity'||canAfford(S.players[S.turn],COSTS.city));
+  if(showSettle||showCity){
     for(const k in S.vertices){
       const v=S.vertices[k];
-      if(vertexValidUI(v)){
+      if(S.mode==='setupSettlement'){
+        if(vertexValidUI(v)){
+          const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
+          c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexTap(k);});
+        }
+      }else if(showCity&&v.owner===S.turn&&v.kind==='settlement'){
+        const c=el('circle',{cx:v.x,cy:v.y,r:15,class:'vspot city'},g);
+        c.addEventListener('click',ev=>{ev.stopPropagation();
+          if(effMode()==='buildCity') onVertexTap(k); else onPlaceTap('city',k);});
+      }else if(showSettle&&v.owner===-1&&settleValid(v,S.turn)){
         const c=el('circle',{cx:v.x,cy:v.y,r:13,class:'vspot'},g);
-        c.addEventListener('click',ev=>{ev.stopPropagation(); onVertexTap(k);});
+        c.addEventListener('click',ev=>{ev.stopPropagation();
+          if(effMode()==='buildSettlement') onVertexTap(k); else onPlaceTap('settlement',k);});
       }
     }
   }
