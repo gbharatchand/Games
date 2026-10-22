@@ -286,6 +286,7 @@
         <div class="pcard"><strong>Build</strong><div id="buildBtns">
           <button class="btn" id="buildRoad">🛣️ Road<br><small>1🧱 1🪵</small></button>
           <button class="btn" id="buildShip" style="display:none">⛵ Ship<br><small>1🪵 1🐑</small></button>
+          <button class="btn" id="moveShipBtn" style="display:none">↔️ Move Ship<br><small>free · 1/turn</small></button>
           <button class="btn" id="buildSettle">🏠 Settlement<br><small>1🧱 1🪵 1🐑 1🌾</small></button>
           <button class="btn" id="buildCity">🏘️ City<br><small>2🌾 3⛰️</small></button>
           <button class="btn" id="buyDevBtn">🧙 Dev Card<br><small>1🌾 1🐑 1⛰️</small></button>
@@ -318,6 +319,7 @@ const TERRAIN = {
   ore:   { color:'#7d8590', res:'ore',   icon:'⛰️' },
   desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
   sea:   { color:'#3d7dc4', res:null,    icon:'' },
+  gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
 };
 const COSTS = {
   road:      { brick:1, wood:1 },
@@ -420,6 +422,13 @@ function buildBoardData(variant){
       const host=hexes.find(h=>h.island===mainIsland&&h.terrain==='sheep')||hexes.find(h=>h.island===mainIsland&&h.terrain!=='desert');
       if(host){ host.terrain='desert'; const n=host.number; host.number=null; des.terrain='sheep'; des.number=n; }
     }
+    // Gold fields: one hex on each of two foreign islands becomes gold (pays any resource)
+    const byIsl={};
+    hexes.forEach(h=>{ if(h.terrain!=='sea'&&h.terrain!=='desert'&&h.island!==mainIsland){ (byIsl[h.island]=byIsl[h.island]||[]).push(h); } });
+    shuffle(Object.keys(byIsl)).slice(0,2).forEach(id=>{
+      const cands=byIsl[id]; const h=cands[Math.floor(Math.random()*cands.length)];
+      if(h) h.terrain='gold';
+    });
   }
   const vertices={}, edges={};
   hexes.forEach(h=>{
@@ -487,6 +496,7 @@ function newGame(playerNames,botFlags,variant){
     mainIsland: b.mainIsland||0,
     winVP: variant==='sea'?13:10,
     chitAt:{},
+    pirateHex:-1, movingPirate:false, shipMoved:false, goldQueue:[],
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
@@ -560,6 +570,7 @@ function resumeLocal(save){
   shownPrompt=null;
   setNetStatus('resumed','on');
   if(S.discardQueue&&S.discardQueue.length){ processDiscard(); }
+  processGold();
   setHint('Welcome back — continue your game.');
   refresh(); renderPrompts(); maybeBot();
 }
@@ -746,7 +757,7 @@ function applyAct(idx,a){
       const round2=S.setupIdx>=S.players.length;
       if(round2){
         const v=S.vertices[S.setupVertex];
-        v.hexes.forEach(hid=>{ const h=S.hexes[hid], res=TERRAIN[h.terrain].res; if(res) giveRes(p,res,1); });
+        v.hexes.forEach(hid=>{ const h=S.hexes[hid], res=TERRAIN[h.terrain].res; if(res&&res!=='gold') giveRes(p,res,1); });
         addLog(`🎁 ${p.name} collects starting resources.`);
       }
       S.setupIdx++; S.setupVertex=null;
@@ -848,7 +859,7 @@ function applyAct(idx,a){
         p.dev.splice(di,1);
         p.knights=(p.knights||0)+1;
         updateLargestArmy();
-        S.mode='moveRobber';
+        S.mode='moveRobber'; S.movingPirate=false;
         addLog(`🕵️ ${p.name} played a Knight!`);
       }else if(a.what==='road'){
         p.dev.splice(di,1);
@@ -885,9 +896,47 @@ function applyAct(idx,a){
       S.pending=null;
       return true;
     }
+    case 'resolveGold':{
+      if(!S.goldQueue||!S.goldQueue.length) return false;
+      const head=S.goldQueue[0];
+      if(head.player!==idx) return false;
+      if(!Array.isArray(a.picks)||a.picks.length!==head.count) return false;
+      if(!a.picks.every(r=>RES.includes(r))) return false;
+      a.picks.forEach(r=>giveRes(p,r,1));
+      addLog(`🪙 ${p.name} took ${a.picks.map(r=>RES_ICON[r]).join(' ')} from a gold field.`);
+      S.goldQueue.shift();
+      if(S.pending&&S.pending.kind==='gold') S.pending=null;
+      processGold();
+      return true;
+    }
+    case 'chooseRaider':{
+      if(!S.pending||S.pending.kind!=='raider'||S.pending.player!==idx) return false;
+      if(a.which!=='robber'&&a.which!=='pirate') return false;
+      chooseRaider(a.which);
+      return true;
+    }
+    case 'moveShip':{
+      if(S.phase!=='play'||S.turn!==idx||S.variant!=='sea'||S.shipMoved) return false;
+      const from=S.edges[a.from], to=S.edges[a.to];
+      if(!from||!to||a.from===a.to||to.owner!==-1) return false;
+      if(!shipMovable(from,idx)) return false;
+      from.owner=-1; const fk=from.kind; from.kind=null;
+      const okShip=shipValid(to,idx);
+      if(!okShip){ from.owner=idx; from.kind=fk; return false; }
+      to.owner=idx; to.kind='ship';
+      S.shipMoved=true; S.mode=null;
+      addLog(`⛵ ${p.name} moved a ship to a new route.`);
+      updateLongest(); checkWin();
+      return true;
+    }
     case 'moveRobber':{
-      if(S.mode!=='moveRobber'||a.hex===S.robberHex) return false;
-      if(!S.hexes[a.hex]||S.hexes[a.hex].terrain==='sea') return false; // robber stays on land
+      if(S.mode!=='moveRobber'||!S.hexes[a.hex]) return false;
+      if(S.movingPirate){
+        if(S.hexes[a.hex].terrain!=='sea'||a.hex===S.pirateHex) return false;
+        doMovePirate(a.hex);
+        return true;
+      }
+      if(a.hex===S.robberHex||S.hexes[a.hex].terrain==='sea') return false; // robber stays on land
       // only current player moves robber
       doMoveRobber(a.hex);
       return true;
@@ -957,11 +1006,29 @@ function roadValid(e,idx){
 function shipValid(e,idx){
   if(S.variant!=='sea'||e.owner!==-1) return false;
   if(!edgeBordersSea(e)) return false; // ships need water
+  if(S.pirateHex!=null&&S.pirateHex>=0&&edgeHexes(e).some(h=>h.id===S.pirateHex)) return false; // pirate blocks this hex
   const a=S.vertices[e.a], b=S.vertices[e.b];
   if(a.owner===idx||b.owner===idx) return true;
   for(const ek in S.edges){
     const o=S.edges[ek];
     if(o.owner===idx&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+  }
+  return false;
+}
+function shipMovable(e,idx){
+  // a ship can move if it sits at a free end of your route (not anchored at both ends)
+  // and the pirate isn't sitting on one of its hexes
+  if(!e||e.kind!=='ship'||e.owner!==idx) return false;
+  if(S.pirateHex!=null&&S.pirateHex>=0&&edgeHexes(e).some(h=>h.id===S.pirateHex)) return false;
+  for(const vk of [e.a,e.b]){
+    const v=S.vertices[vk];
+    if(v.owner===idx) continue; // anchored by your own settlement/city
+    let onward=false;
+    for(const ek2 in S.edges){
+      const o=S.edges[ek2];
+      if(o!==e&&o.owner===idx&&(o.a===vk||o.b===vk)){ onward=true; break; }
+    }
+    if(!onward) return true;
   }
   return false;
 }
@@ -998,11 +1065,21 @@ function doRoll(){
   const sum=d1+d2;
   animateDice(d1,d2);
   if(sum===7){ addLog(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
-  else{ addLog(`🎲 ${cur().name} rolled ${sum}`); distribute(sum); }
+  else{ addLog(`🎲 ${cur().name} rolled ${sum}`); distribute(sum); processGold(); }
 }
 function distribute(sum){
+  if(!S.goldQueue) S.goldQueue=[];
+  const goldDue={};
   S.hexes.forEach(h=>{
     if(h.number!==sum||h.id===S.robberHex) return;
+    if(h.terrain==='gold'){
+      // gold field: adjacent owners choose that many resources of any kind
+      for(const k in S.vertices){
+        const v=S.vertices[k];
+        if(v.owner>=0&&v.hexes.includes(h.id)) goldDue[v.owner]=(goldDue[v.owner]||0)+(v.kind==='city'?2:1);
+      }
+      return;
+    }
     const res=TERRAIN[h.terrain].res;
     if(!res) return;
     for(const k in S.vertices){
@@ -1010,6 +1087,32 @@ function distribute(sum){
       if(v.owner>=0&&v.hexes.includes(h.id)) giveRes(S.players[v.owner],res,v.kind==='city'?2:1);
     }
   });
+  Object.keys(goldDue).forEach(pi=>{ S.goldQueue.push({player:+pi, count:goldDue[pi]}); });
+}
+function goldAutoPicks(p,count){
+  // bots take what they're shortest on
+  const have={...p.res}; const picks=[];
+  for(let i=0;i<count;i++){ let best=RES[0]; for(const r of RES) if(have[r]<have[best]) best=r; picks.push(best); have[best]++; }
+  return picks;
+}
+function processGold(){
+  if(!S||!S.goldQueue||!S.goldQueue.length){
+    if(S&&S.pending&&S.pending.kind==='gold') S.pending=null;
+    return;
+  }
+  const e=S.goldQueue[0], p=S.players[e.player];
+  if(isBot(e.player)){
+    const picks=goldAutoPicks(p,e.count);
+    picks.forEach(r=>giveRes(p,r,1));
+    addLog(`🪙 ${p.name} took ${picks.map(r=>RES_ICON[r]).join(' ')} from a gold field.`);
+    S.goldQueue.shift();
+    processGold();
+  }else if(isLocalPlayer(e.player)){
+    showGoldModal(e);
+  }else{
+    S.pending={kind:'gold', player:e.player, count:e.count};
+    setHint(`🪙 Waiting for ${p.name} to choose gold-field resources…`);
+  }
 }
 
 /* ================= Robber (host-side) ================= */
@@ -1020,8 +1123,7 @@ function startRobber(){
 }
 function processDiscard(){
   if(!S.discardQueue.length){
-    S.pending=null; S.mode='moveRobber';
-    setHint('🕵️ Tap a hex to move the robber.');
+    startRaiderMove();
     return;
   }
   const dq=S.discardQueue[0];
@@ -1032,8 +1134,70 @@ function processDiscard(){
     setHint(`🕵️ Waiting for ${S.players[dq.player].name} to discard ${dq.must} cards…`);
   }
 }
+function startRaiderMove(){
+  S.pending=null;
+  const canPirate=S.variant==='sea'&&Object.values(S.edges).some(e=>e.kind==='ship');
+  if(!canPirate){
+    S.movingPirate=false; S.mode='moveRobber';
+    setHint('🕵️ Tap a hex to move the robber.');
+    return;
+  }
+  const i=S.turn;
+  if(isBot(i)){ chooseRaider(botRaiderChoice(i)); }
+  else if(isLocalPlayer(i)){ showRaiderModal(); }
+  else{
+    S.pending={kind:'raider', player:i};
+    setHint(`🏴‍☠️ Waiting for ${S.players[i].name} to choose robber or pirate…`);
+  }
+}
+function chooseRaider(which){
+  S.pending=null;
+  S.movingPirate=(which==='pirate');
+  S.mode='moveRobber';
+  setHint(S.movingPirate?'🏴‍☠️ Tap a sea hex to move the pirate.':'🕵️ Tap a hex to move the robber.');
+}
+function pirateVictimsAt(hexId,idx){
+  const victims=new Set();
+  for(const ek in S.edges){
+    const e=S.edges[ek];
+    if(e.kind==='ship'&&e.owner>=0&&e.owner!==idx&&totalCards(S.players[e.owner])>0&&edgeHexes(e).some(h=>h.id===hexId)) victims.add(e.owner);
+  }
+  return [...victims];
+}
+function botRaiderChoice(i){
+  // pirate only if it can actually raid someone's ships
+  for(const h of S.hexes){
+    if(h.terrain==='sea'&&h.id!==S.pirateHex&&pirateVictimsAt(h.id,i).length) return 'pirate';
+  }
+  return 'robber';
+}
+function botChoosePirateHex(i){
+  let best=null,bs=-1;
+  S.hexes.forEach(h=>{
+    if(h.terrain!=='sea'||h.id===S.pirateHex) return;
+    const s=pirateVictimsAt(h.id,i).length+Math.random();
+    if(s>bs){ bs=s; best=h.id; }
+  });
+  return best;
+}
+function doMovePirate(hexId){
+  S.pirateHex=hexId; S.mode=null; S.movingPirate=false;
+  addLog(`🏴‍☠️ ${cur().name} moved the pirate!`);
+  const victims=pirateVictimsAt(hexId,S.turn);
+  if(victims.length===0){ S.pending=null; setHint('Pirate moved. No ships nearby to raid.'); }
+  else if(victims.length===1){ doSteal(victims[0]); }
+  else{
+    const chooser=S.turn;
+    if(isBot(chooser)){ doSteal(botChooseStealVictim(victims)); }
+    else if(isLocalPlayer(chooser)){ showStealModal(victims); }
+    else{
+      S.pending={kind:'steal', chooser:chooser, victims:victims};
+      setHint(`🏴‍☠️ Waiting for ${cur().name} to choose who to steal from…`);
+    }
+  }
+}
 function doMoveRobber(hexId){
-  S.robberHex=hexId; S.mode=null;
+  S.robberHex=hexId; S.mode=null; S.movingPirate=false;
   const victims=new Set();
   for(const k in S.vertices){
     const v=S.vertices[k];
@@ -1203,7 +1367,7 @@ function botStep(i){
     return;
   }
   if(S.phase!=='play') return;
-  if(S.mode==='moveRobber'){ const h=botChooseRobberHex(i); if(h!=null) hostApplyAct(i,{kind:'moveRobber',hex:h}); return; }
+  if(S.mode==='moveRobber'){ const h=S.movingPirate?botChoosePirateHex(i):botChooseRobberHex(i); if(h!=null) hostApplyAct(i,{kind:'moveRobber',hex:h}); return; }
   if(!S.rolled){ hostApplyAct(i,{kind:'roll'}); return; }
   if(botTryBuild(i)) return;
   hostApplyAct(i,{kind:'endTurn'});
@@ -1275,7 +1439,7 @@ function checkWin(){
 }
 function doEndTurn(){
   S.players[S.turn].dev.forEach(c=>{ c.fresh=false; });
-  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null;
+  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null; S.shipMoved=false;
   addLog(`➡️ ${cur().name}'s turn.`);
 }
 
@@ -1377,8 +1541,10 @@ function uiEdgeClick(k){
   else if(S.mode==='buildRoad'){ sendOrDo({kind:'place', what:'road', key:k}); }
 }
 function uiHexClick(id){
-  if(!S||S.mode!=='moveRobber'||id===S.robberHex) return;
-  if(S.hexes[id]&&S.hexes[id].terrain==='sea') return;
+  if(!S||S.mode!=='moveRobber') return;
+  const h=S.hexes[id]; if(!h) return;
+  if(S.movingPirate){ if(h.terrain!=='sea'||id===S.pirateHex) return; }
+  else if(h.terrain==='sea'||id===S.robberHex) return;
   if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'moveRobber', hex:id});
 }
@@ -1398,6 +1564,7 @@ function uiSetBuildMode(m){
   const hints={
     buildRoad:'Tap a highlighted edge to build a road (1🧱 1🪵).',
     buildShip:'Tap a highlighted water edge to build a ship (1🪵 1🐑). Ships sail your trade route to new islands!',
+    moveShip:'Tap one of your glowing ships to pick it up, then tap a glowing water edge to move it there. Free, once per turn!',
     buildSettlement:'Tap a highlighted spot to build a settlement (1🧱 1🪵 1🐑 1🌾).',
     buildCity:'Tap one of your settlements to upgrade it to a city (2🌾 3⛰️).',
   };
@@ -1434,6 +1601,7 @@ function onPlaceTap(what,key){
   sendOrDo({kind:'place', what:what, key:key});
 }
 // A coastal edge can hold a road OR a ship — ask which one.
+let pickedShip=null;
 function showBuildChooser(ek){
   const free=S.freeRoads>0;
   const ov=overlay(`<h2>Build here?</h2>
@@ -1516,7 +1684,49 @@ function renderPrompts(){
     showPlentyModal(S.pending.player);
   }else if(S.pending&&S.pending.kind==='monopoly'&&S.pending.player===NET.myIdx){
     showMonopolyModal(S.pending.player);
+  }else if(S.pending&&S.pending.kind==='raider'&&S.pending.player===NET.myIdx){
+    showRaiderModal();
+  }else if(S.pending&&S.pending.kind==='gold'&&S.pending.player===NET.myIdx){
+    showGoldModal({player:S.pending.player, count:S.pending.count});
   }
+}
+function showRaiderModal(){
+  const ov=overlay(`<h2>🎲 A 7 was rolled!</h2>
+    <p>Move the <b>robber</b> on land, or the <b>pirate</b> on the sea (blocks ships there and steals from a ship owner nearby)?</p>
+    <div class="btnrow">
+      <button class="btn" id="raidRobber">🕵️ Robber</button>
+      <button class="btn primary" id="raidPirate">🏴‍☠️ Pirate</button>
+    </div>`);
+  const pick=(which)=>{
+    closeOverlay(); shownPrompt=null;
+    if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:{kind:'chooseRaider', which:which}}); }
+    else{ chooseRaider(which); afterChange(); }
+  };
+  ov.querySelector('#raidRobber').onclick=()=>pick('robber');
+  ov.querySelector('#raidPirate').onclick=()=>pick('pirate');
+}
+function showGoldModal(entry){
+  const p=S.players[entry.player];
+  const sels=Array.from({length:entry.count},(_,i)=>`<span>${i+1}:</span><select id="gold${i}">${resOptions()}</select>`).join(' ');
+  const ov=overlay(`<h2>🪙 Gold field!</h2>
+    <p>${escapeHtml(p.name)} — choose ${entry.count} resource${entry.count>1?'s':''} to take:</p>
+    <div class="tradeRow">${sels}</div>
+    <div class="btnrow"><button class="btn primary" id="goldOk">Take</button></div>`);
+  ov.querySelector('#goldOk').onclick=()=>{
+    const picks=[];
+    for(let i=0;i<entry.count;i++) picks.push(ov.querySelector('#gold'+i).value);
+    closeOverlay(); shownPrompt=null;
+    if(NET.mode==='online'&&!NET.isHost){
+      netSend({t:'act', a:{kind:'resolveGold', picks:picks}});
+    }else{
+      picks.forEach(r=>giveRes(p,r,1));
+      addLog(`🪙 ${p.name} took ${picks.map(r=>RES_ICON[r]).join(' ')} from a gold field.`);
+      S.goldQueue.shift();
+      if(S.pending&&S.pending.kind==='gold') S.pending=null;
+      processGold();
+      afterChange();
+    }
+  };
 }
 function showDiscardModal(dq){
   const p=S.players[dq.player];
@@ -1703,6 +1913,9 @@ function showRules(){
     <li>🛣️ <b>Longest Road</b> (5+ roads) and ⚔️ <b>Largest Army</b> (3+ Knights) each give <b>+2 VP</b> — they can change hands during the game.</li>
     <li>⛵ <b>Seafarers mode</b> (pick it on the main menu): a bigger map of islands! Build <b>ships</b> (1🪵 1🐑) on the water to reach new islands — roads and ships together count for the <b>Longest Trade Route</b>. Starting settlements go on the main island.</li>
     <li>⭐ <b>Discovery bonus:</b> in Seafarers, your first settlement on each new island earns <b>+2 VP</b> (marked ⭐ on the board). First to <b>13 VP</b> wins!</li>
+    <li>🪙 <b>Gold fields</b> (Seafarers): when a gold hex's number is rolled, settlements next to it take that many resources of <i>any</i> kind — you choose!</li>
+    <li>🏴‍☠️ <b>The Pirate</b> (Seafarers): on a roll of 7, choose the robber <i>or</i> the pirate. The pirate sits on a sea hex: no new ships can be built around it, ships there can't move, and you steal 1 card from a ship owner next to it.</li>
+    <li>↔️ <b>Move a ship</b> (Seafarers): once per turn, free — pick up a ship at the open end of your route and place it on another water edge (Build tab → Move Ship).</li>
     <li>⏱️ <b>Turn timer:</b> 60 seconds per turn — the ring around <b>End Turn</b> counts down. Run out and the game rolls (if you haven't) and passes your turn.</li>
     <li>🏆 First to <b>10 VP</b> wins! Settlement = 1 VP, City = 2 VP.</li>
     <li>🤖 <b>Solo mode:</b> practice against computer opponents from the main menu.</li>
@@ -1870,7 +2083,8 @@ function renderBoard(){
   }
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
-    const hg=el('g',{class:'hex'+(S.mode==='moveRobber'&&h.id!==S.robberHex&&h.terrain!=='sea'?' robber-ok':'')},g);
+    const raiderOk=S.mode==='moveRobber'&&(S.movingPirate?(h.terrain==='sea'&&h.id!==S.pirateHex):(h.terrain!=='sea'&&h.id!==S.robberHex));
+    const hg=el('g',{class:'hex'+(raiderOk?' robber-ok':'')},g);
     hg.addEventListener('click',()=>uiHexClick(h.id));
     // 2.5D: extruded tile base beneath the top face
     const pts=corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
@@ -1891,6 +2105,10 @@ function renderBoard(){
     if(h.id===S.robberHex){
       const rt=el('text',{x:c.x, y:c.y+4, 'text-anchor':'middle','font-size':'34'},hg);
       rt.textContent='🕵️';
+    }
+    if(h.id===S.pirateHex){
+      const pt=el('text',{x:c.x, y:c.y+16, 'text-anchor':'middle','font-size':'36'},hg);
+      pt.textContent='🏴‍☠️';
     }
   });
   for(const ek in S.edges){
@@ -1936,6 +2154,36 @@ function renderBoard(){
       const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:roadToo?'espot both':'sspot'},g);
       l.addEventListener('click',ev=>{ev.stopPropagation();
         if(roadToo) showBuildChooser(ek); else onPlaceTap('ship',ek);});
+    }
+  }
+  // Move-a-ship: tap one of your movable ships (free end of a route), then a glowing target edge.
+  if(effMode()!=='moveShip') pickedShip=null;
+  const moveOK=canPlace&&S.phase==='play'&&!S.pending&&S.variant==='sea'&&effMode()==='moveShip'&&!S.shipMoved;
+  if(moveOK){
+    if(pickedShip&&!shipMovable(S.edges[pickedShip],S.turn)) pickedShip=null;
+    if(!pickedShip){
+      for(const ek in S.edges){
+        const e=S.edges[ek];
+        if(!shipMovable(e,S.turn)) continue;
+        const a=S.vertices[e.a], b=S.vertices[e.b];
+        const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'sspot'},g);
+        l.addEventListener('click',ev=>{ ev.stopPropagation(); pickedShip=ek; refresh(); });
+      }
+    }else{
+      const from=S.edges[pickedShip];
+      const fa=S.vertices[from.a], fb=S.vertices[from.b];
+      el('line',{x1:fa.x,y1:fa.y,x2:fb.x,y2:fb.y,class:'espot both'},g);
+      from.owner=-1; const fromKind=from.kind; from.kind=null;
+      for(const ek in S.edges){
+        const e=S.edges[ek];
+        if(ek===pickedShip||e.owner!==-1||!shipValid(e,S.turn)) continue;
+        const a=S.vertices[e.a], b=S.vertices[e.b];
+        const l=el('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'sspot'},g);
+        l.addEventListener('click',ev=>{ ev.stopPropagation();
+          const fromKey=pickedShip; pickedShip=null;
+          sendOrDo({kind:'moveShip', from:fromKey, to:ek}); });
+      }
+      from.owner=S.turn; from.kind=fromKind;
     }
   }
   for(const k in S.vertices){
@@ -2058,6 +2306,12 @@ function refresh(){
     const sea=S.variant==='sea';
     shipBtn.style.display=sea?'':'none';
     if(sea){ shipBtn.disabled=!canBuild; shipBtn.classList.toggle('cant',canBuild&&!afford(COSTS.ship)); }
+  }
+  const moveBtn=$('moveShipBtn');
+  if(moveBtn){
+    const sea=S.variant==='sea';
+    moveBtn.style.display=sea?'':'none';
+    if(sea){ moveBtn.disabled=!(canBuild&&!S.shipMoved); moveBtn.classList.toggle('cant',canBuild&&!!S.shipMoved); }
   }
   $('buildSettle').classList.toggle('cant',canBuild&&!afford(COSTS.settlement));
   $('buildCity').classList.toggle('cant',canBuild&&!afford(COSTS.city));
@@ -2335,6 +2589,7 @@ function boot(){
   $('endTurnBtn').onclick=uiEndTurn;
   $('buildRoad').onclick=()=>uiSetBuildMode('buildRoad');
   $('buildShip').onclick=()=>uiSetBuildMode('buildShip');
+  $('moveShipBtn').onclick=()=>uiSetBuildMode('moveShip');
   $('buildSettle').onclick=()=>uiSetBuildMode('buildSettlement');
   $('buildCity').onclick=()=>uiSetBuildMode('buildCity');
   $('bankTradeBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') bankTradeUI(); };
