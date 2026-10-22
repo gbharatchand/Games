@@ -14,6 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <title>Family Catan</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap");
   :root {
@@ -136,6 +137,10 @@
   .vspot { fill: rgba(255,255,255,.55); stroke: #fff; stroke-width: 2; cursor: pointer; }
   .vspot:hover { fill: var(--gold); }
   .vspot.city { fill: rgba(255,190,40,.5); stroke: var(--gold); stroke-width: 3; }
+  .profileBar { display:flex; align-items:center; gap:10px; justify-content:center; margin:10px 0 2px; flex-wrap:wrap; }
+  .profileBar .pavatar { width:34px; height:34px; border-radius:50%; }
+  .profileBar .pnote { font-size:.85rem; opacity:.75; }
+  .btn.small { padding:4px 12px; font-size:.85rem; }
   .espot { stroke: rgba(255,255,255,.7); stroke-width: 10; cursor: pointer; fill: none; }
   .espot:hover { stroke: var(--gold); }
   .road { stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
@@ -1864,6 +1869,64 @@ function refresh(){
   }
 }
 
+/* ================= Google profile (optional sign-in) =================
+   Client-side only: name & photo come straight from the Google ID token and
+   are kept in localStorage, so the profile shows up on every visit and the
+   menu name is pre-filled. Sign-in is optional — the game works without it.
+   Set GOOGLE_CLIENT_ID from Google Cloud Console (OAuth > Web client) with
+   https://gbharatchand.github.io as an authorized JavaScript origin. */
+const GOOGLE_CLIENT_ID='';
+let PROFILE=null;
+function loadProfile(){
+  if(PROFILE) return PROFILE;
+  try{ PROFILE=JSON.parse(localStorage.getItem('familycatan-profile-v1')||'null'); }catch(e){ PROFILE=null; }
+  return PROFILE;
+}
+function saveProfile(p){
+  PROFILE=p;
+  try{
+    if(p) localStorage.setItem('familycatan-profile-v1', JSON.stringify(p));
+    else localStorage.removeItem('familycatan-profile-v1');
+  }catch(e){}
+}
+function decodeJwt(t){
+  let s=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+  while(s.length%4) s+='=';
+  return JSON.parse(decodeURIComponent(atob(s).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+}
+function onGoogleCredential(resp){
+  try{
+    const d=decodeJwt(resp.credential);
+    const full=d.name||d.given_name||'Player';
+    saveProfile({ name:full, given:d.given_name||full.split(' ')[0], picture:d.picture||'', email:d.email||'', sub:d.sub||'' });
+  }catch(e){ /* ignore a bad token */ }
+  showMenu();
+}
+function googleReady(){
+  return !!GOOGLE_CLIENT_ID&&typeof google!=='undefined'&&!!(google.accounts&&google.accounts.id);
+}
+function renderGoogleInto(elm){
+  if(!googleReady()) return false;
+  try{
+    google.accounts.id.initialize({ client_id:GOOGLE_CLIENT_ID, callback:onGoogleCredential, auto_select:false });
+    google.accounts.id.renderButton(elm,{ theme:'outline', size:'large', text:'signin_with', shape:'pill' });
+    return true;
+  }catch(e){ return false; }
+}
+function googleSignOut(){
+  try{ if(typeof google!=='undefined'&&google.accounts&&google.accounts.id) google.accounts.id.disableAutoSelect(); }catch(e){}
+  saveProfile(null);
+  showMenu();
+}
+function profileBarHtml(){
+  const p=loadProfile();
+  if(p){
+    return `<div class="profileBar"><img class="pavatar" src="${escapeHtml(p.picture||'')}" alt="" onerror="this.style.display='none'"><span>Signed in as <b>${escapeHtml(p.given||p.name)}</b></span><button class="btn small" id="gOut">Sign out</button></div>`;
+  }
+  if(!GOOGLE_CLIENT_ID) return '';
+  return `<div class="profileBar"><div id="gBtn"></div><span class="pnote">Sign in to keep your name &amp; photo</span></div>`;
+}
+
 /* ================= Menu & lobby ================= */
 function showMenu(){
   const save=loadSave();
@@ -1877,6 +1940,7 @@ function showMenu(){
   }
   const ov=overlay(`<h2>🏝️ Family Catan</h2>
     <p>2–4 players. Build, trade, race to 10 points!</p>
+    ${profileBarHtml()}
     ${resumeHtml}
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
     <div class="btnrow">
@@ -1890,6 +1954,12 @@ function showMenu(){
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
+  const prof=loadProfile();
+  if(prof){ const mn=ov.querySelector('#menuName'); if(mn) mn.value=(prof.given||prof.name||'').slice(0,12); }
+  const gBtn=ov.querySelector('#gBtn');
+  if(gBtn&&!renderGoogleInto(gBtn)) setTimeout(()=>{ const b2=document.querySelector('#gBtn'); if(b2) renderGoogleInto(b2); },1500);
+  const gOut=ov.querySelector('#gOut');
+  if(gOut) gOut.onclick=googleSignOut;
   const mr=ov.querySelector('#mResume');
   if(mr) mr.onclick=()=>resumeLocal(save);
   const rj=ov.querySelector('#mRejoin');
@@ -1975,6 +2045,8 @@ function showLocalSetup(){
     }
   };
   renderNames();
+  const prof2=loadProfile();
+  if(prof2){ const f0=ov.querySelector('#pname0'); if(f0) f0.value=(prof2.given||prof2.name||'').slice(0,12); }
   ov.querySelector('#npick').addEventListener('click',e=>{
     const b=e.target.closest('button'); if(!b) return;
     n=+b.dataset.n;
