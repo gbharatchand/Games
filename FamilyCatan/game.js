@@ -1801,13 +1801,22 @@ function renderBoard(){
     corners.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
   });
   const pad=S.variant==='sea'?64:105;
-  svg.setAttribute('viewBox',`${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`);
+  let vx=minX-pad, vy=minY-pad, vw=maxX-minX+pad*2, vh=maxY-minY+pad*2;
+  // expand the viewBox to the frame's aspect ratio so the board fills it exactly — no empty band on either side
+  const bwEl=$('boardWrap');
+  const fw=bwEl?bwEl.clientWidth:0, fh=bwEl?bwEl.clientHeight:0;
+  if(fw>40&&fh>40){
+    const ta=fw/fh, ca=vw/vh;
+    if(ta>ca){ const nw=vh*ta; vx-=(nw-vw)/2; vw=nw; }
+    else if(ca>ta){ const nh=vw/ta; vy-=(nh-vh)/2; vh=nh; }
+  }
+  svg.setAttribute('viewBox',`${vx} ${vy} ${vw} ${vh}`);
   if(S.variant==='sea'){
-    el('rect',{x:minX-pad, y:minY-pad, width:maxX-minX+pad*2, height:maxY-minY+pad*2, fill:'#2f6db3'},g);
+    el('rect',{x:vx, y:vy, width:vw, height:vh, fill:'#2f6db3'},g);
     // ocean fills the whole frame too, so the board never looks "cut off" in a taller frame
-    const bw=$('boardWrap'); if(bw) bw.style.background='#2f6db3';
+    if(bwEl) bwEl.style.background='#2f6db3';
   }else{
-    const bw=$('boardWrap'); if(bw) bw.style.background='';
+    if(bwEl) bwEl.style.background='';
   }
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
@@ -2383,6 +2392,7 @@ function boot(){
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
   window.addEventListener('pagehide', saveGame);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') saveGame(); });
+  if(window.addEventListener) window.addEventListener('resize', ()=>{ clearTimeout(window.__rzT); window.__rzT=setTimeout(()=>{ if(S) refresh(); },200); });
   setInterval(tickTimer, 500);
   setNetStatus('offline','');
   showMenu();
