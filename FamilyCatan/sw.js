@@ -3,8 +3,8 @@
    game itself loads and plays offline (same-device mode).
    Strategy: network-first for the app shell (index.html) so updates
    always arrive; cache-first for other same-origin assets. */
-const CACHE = 'familycatan-v11';
-const CORE = ['./index.html', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'familycatan-v12';
+const CORE = ['./index.html', './game.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -19,17 +19,18 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
-  const isShell = e.request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/FamilyCatan/');
+  const isShell = e.request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/FamilyCatan/') || url.pathname.endsWith('/game.js');
   if (isShell && url.origin === self.location.origin) {
     // app shell: try network first so updates arrive, fall back to cache offline
+    const cacheKey = url.pathname.endsWith('/game.js') ? './game.js' : './index.html';
     e.respondWith(
       fetch(e.request).then(res => {
         if (res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copy));
+          caches.open(CACHE).then(c => c.put(cacheKey, copy));
         }
         return res;
-      }).catch(() => caches.match('./index.html'))
+      }).catch(() => caches.match(cacheKey))
     );
     return;
   }
