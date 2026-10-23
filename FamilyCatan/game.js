@@ -1730,68 +1730,87 @@ function applyZoom(){
 }
 function resetZoom(){ ZOOM.s=1; ZOOM.tx=0; ZOOM.ty=0; applyZoom(); }
 function initBoardGestures(){
-  const wrap=$('boardWrap'); if(!wrap) return;
-  // Pointer events (touch + mouse in one path); #boardWrap has touch-action:none in CSS
-  // so the browser never hijacks a drag as a page scroll.
-  const pts=new Map();
+  const wrap=$('boardWrap'); if(!wrap||wrap.__gestures) return; wrap.__gestures=true;
+  // Drag-to-pan is driven through TWO independent paths (classic touch events, and
+  // pointer events for mouse/pen tracked on window) — whichever a browser honors,
+  // one of them moves the board. #boardWrap/#board carry touch-action:none in CSS.
+  let dragging=false, moved=false, suppressClick=false, lastTap=0, lastTapX=-999, lastTapY=-999, sx=0, sy=0;
   let pinch0=0, s0=1, tx0=0, ty0=0, cx0=0, cy0=0;
-  let moved=false, suppressClick=false, lastTap=0, lastTapX=-999, lastTapY=-999, sx=0, sy=0;
   const px2units=()=>{ const svg=$('board'); const r=svg.getBoundingClientRect(); const vb=svg.viewBox.baseVal; return vb.width/Math.max(1,r.width); };
   const clampPan=()=>{ const vb=$('board').viewBox.baseVal; const mx=vb.width*0.75, my=vb.height*0.75;
     ZOOM.tx=Math.max(-mx,Math.min(mx,ZOOM.tx)); ZOOM.ty=Math.max(-my,Math.min(my,ZOOM.ty)); };
-  const two=()=>{ const a=[...pts.values()]; return a.length>=2?a:null; };
-  wrap.addEventListener('pointerdown',e=>{
-    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(wrap.setPointerCapture){ try{ wrap.setPointerCapture(e.pointerId); }catch(_){} }
-    if(pts.size===2){
-      const a=two(); pinch0=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+  function dragStart(x,y){ sx=x; sy=y; moved=false; dragging=true; }
+  function dragMove(x,y){
+    if(!dragging||ZOOM.s<=1.02) return;
+    const dx=x-sx, dy=y-sy;
+    if(Math.hypot(dx,dy)>8) moved=true;
+    if(moved){ const k=px2units(); ZOOM.tx+=dx*k; ZOOM.ty+=dy*k; sx=x; sy=y; clampPan(); applyZoom(); }
+  }
+  function dragEnd(x,y){
+    if(!dragging) return;
+    dragging=false;
+    if(moved){ suppressClick=true; } // eat the click that follows a pan
+    else{
+      const now=Date.now();
+      // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
+      const nearLast=Math.hypot(x-lastTapX,y-lastTapY)<48;
+      if(nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
+      lastTap=now; lastTapX=x; lastTapY=y;
+    }
+    moved=false;
+  }
+  // --- touch path ---
+  wrap.addEventListener('touchstart',e=>{
+    if(e.touches.length===2){
+      const a=e.touches[0], b=e.touches[1];
+      pinch0=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
       s0=ZOOM.s; tx0=ZOOM.tx; ty0=ZOOM.ty;
-      cx0=(a[0].x+a[1].x)/2; cy0=(a[0].y+a[1].y)/2;
-    }else if(pts.size===1){ sx=e.clientX; sy=e.clientY; moved=false; }
-  });
-  wrap.addEventListener('pointermove',e=>{
-    if(!pts.has(e.pointerId)) return;
-    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    const a=two();
-    if(a){
-      const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+      cx0=(a.clientX+b.clientX)/2; cy0=(a.clientY+b.clientY)/2;
+      dragging=false;
+    }else if(e.touches.length===1){
+      dragStart(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  },{passive:true});
+  wrap.addEventListener('touchmove',e=>{
+    if(e.touches.length===2){
+      const a=e.touches[0], b=e.touches[1];
+      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
       if(pinch0>0){
-        const k=px2units();
-        ZOOM.s=Math.min(4,Math.max(1,s0*d/pinch0));
-        const ncx=(a[0].x+a[1].x)/2, ncy=(a[0].y+a[1].y)/2;
-        ZOOM.tx=tx0+(ncx-cx0)*k; ZOOM.ty=ty0+(ncy-cy0)*k;
-        clampPan(); applyZoom(); moved=true;
-      }
-    }else if(ZOOM.s>1.05){
-      const dx=e.clientX-sx, dy=e.clientY-sy;
-      if(Math.hypot(dx,dy)>10) moved=true;
-      if(moved){
         e.preventDefault();
         const k=px2units();
-        ZOOM.tx+=dx*k; ZOOM.ty+=dy*k;
-        sx=e.clientX; sy=e.clientY;
-        clampPan(); applyZoom();
+        ZOOM.s=Math.min(4,Math.max(1,s0*d/pinch0));
+        ZOOM.tx=tx0+((a.clientX+b.clientX)/2-cx0)*k; ZOOM.ty=ty0+((a.clientY+b.clientY)/2-cy0)*k;
+        clampPan(); applyZoom(); moved=true;
       }
+    }else if(e.touches.length===1&&dragging){
+      dragMove(e.touches[0].clientX, e.touches[0].clientY);
+      if(moved) e.preventDefault(); // once it's a pan, the page must not scroll
+    }
+  },{passive:false});
+  wrap.addEventListener('touchend',e=>{
+    if(e.touches.length===0){
+      const t=e.changedTouches&&e.changedTouches[0];
+      if(t) dragEnd(t.clientX,t.clientY);
+      pinch0=0;
     }
   });
-  const endPointer=e=>{
-    const wasDrag=moved;
-    pts.delete(e.pointerId);
-    if(pts.size===0){
-      pinch0=0;
-      if(wasDrag){ suppressClick=true; } // eat the click that follows a pan
-      else{
-        const now=Date.now();
-        // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
-        const nearLast=Math.hypot(e.clientX-lastTapX,e.clientY-lastTapY)<48;
-        if(nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
-        lastTap=now; lastTapX=e.clientX; lastTapY=e.clientY;
-      }
-      moved=false;
-    }
-  };
-  wrap.addEventListener('pointerup',endPointer);
-  wrap.addEventListener('pointercancel',endPointer);
+  wrap.addEventListener('touchcancel',()=>{ dragging=false; moved=false; pinch0=0; });
+  // --- mouse/pen path (pointer events; touch pointers are handled above) ---
+  wrap.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='touch') return;
+    if(e.button!==undefined&&e.button!==0) return;
+    dragStart(e.clientX,e.clientY);
+  });
+  if(window.addEventListener){
+    window.addEventListener('pointermove',e=>{
+      if(e.pointerType==='touch') return;
+      dragMove(e.clientX,e.clientY);
+    });
+    window.addEventListener('pointerup',e=>{
+      if(e.pointerType==='touch') return;
+      dragEnd(e.clientX,e.clientY);
+    });
+  }
   wrap.addEventListener('click',e=>{
     if(suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
   },true);
