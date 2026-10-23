@@ -2101,11 +2101,14 @@ function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function renderPlayerStats(){
   const elc=$('playerStats'); if(!elc||!S) return;
   elc.innerHTML='';
+  const tn=$('turnNow');
+  if(tn) tn.textContent=S.players[S.turn] ? "— "+S.players[S.turn].name+"'s turn" : '';
   S.players.forEach((p,i)=>{
-    const d=document.createElement('div'); d.className='pstat';
+    const d=document.createElement('div'); d.className='pstat'+(i===S.turn?' turn':'');
     const badges=(p.hasLongest?'🛣️':'')+(p.hasLargestArmy?'⚔️':'');
     d.innerHTML=`<span class="dot" style="background:${p.color}"></span>`+
-      `<span class="nm">${escHtml(p.name)}${i===S.turn?' ◀':''}</span>`+
+      `<span class="nm">${escHtml(p.name)}</span>`+
+      (i===S.turn?`<span class="turnChip">▶ TURN</span>`:'')+
       (badges?`<span class="badge">${badges}</span>`:'')+
       `<span class="nums">🂠${totalCards(p)} 🧙${p.dev?p.dev.length:0} ⚔️${p.knights||0} 🛣️${roadCount(i)}</span>`+
       `<span class="vp">${vp(p)} VP</span>`;
@@ -2343,7 +2346,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v21</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v22</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
