@@ -3,11 +3,14 @@
    game itself loads and plays offline (same-device mode).
    Strategy: network-first for the app shell (index.html) so updates
    always arrive; cache-first for other same-origin assets. */
-const CACHE = 'familycatan-v16';
+const CACHE = 'familycatan-v17';
 const CORE = ['./index.html', './game.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
+  // no-store everywhere: Pages serves files with a ~10 min HTTP cache, and a plain
+  // fetch inside that window hands back the PREVIOUS build — that is how clients
+  // ended up running mixed old/new versions after a deploy.
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'no-store' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(
@@ -24,7 +27,7 @@ self.addEventListener('fetch', e => {
     // app shell: try network first so updates arrive, fall back to cache offline
     const cacheKey = url.pathname.endsWith('/game.js') ? './game.js' : './index.html';
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request.url, { cache: 'no-store' }).then(res => {
         if (res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(cacheKey, copy));
