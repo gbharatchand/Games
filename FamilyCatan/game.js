@@ -1831,7 +1831,7 @@ function initBoardGestures(){
     ZOOM.tx=Math.max(-mx,Math.min(mx,ZOOM.tx)); ZOOM.ty=Math.max(-my,Math.min(my,ZOOM.ty)); };
   function dragStart(x,y){ sx=x; sy=y; moved=false; dragging=true; }
   function dragMove(x,y){
-    if(!dragging||ZOOM.s<=1.02) return;
+    if(!dragging) return; // pan at EVERY zoom level — fitted and zoomed-out boards must drag too
     const dx=x-sx, dy=y-sy;
     if(Math.hypot(dx,dy)>8) moved=true;
     if(moved){ const k=px2units(); ZOOM.tx+=dx*k; ZOOM.ty+=dy*k; sx=x; sy=y; clampPan(); applyZoom(); }
@@ -1870,6 +1870,7 @@ function initBoardGestures(){
         const k=px2units();
         ZOOM.s=Math.min(4,Math.max(0.55,s0*d/pinch0));
         ZOOM.tx=tx0+((a.clientX+b.clientX)/2-cx0)*k; ZOOM.ty=ty0+((a.clientY+b.clientY)/2-cy0)*k;
+        if(ZOOM.s<=0.55){ ZOOM.tx=0; ZOOM.ty=0; } // fully zoomed out = whole board, centered
         clampPan(); applyZoom(); moved=true;
       }
     }else if(e.touches.length===1&&dragging){
@@ -1910,6 +1911,7 @@ function initBoardGestures(){
     if(ns===ZOOM.s) return; // already at the limit — let the page scroll instead of trapping the wheel
     e.preventDefault();
     ZOOM.s=ns;
+    if(ns<=0.55){ ZOOM.tx=0; ZOOM.ty=0; } // fully zoomed out = whole board, centered
     applyZoom();
   },{passive:false});
 }
@@ -2351,7 +2353,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v24</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v25</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
