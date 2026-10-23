@@ -736,6 +736,9 @@ function applyAct(idx,a){
   if(S.pending&&S.pending.kind==='discard'&&a.kind!=='discard') return false;
   if(S.pending&&S.pending.kind==='raider'&&a.kind!=='chooseRaider') return false;
   if(S.pending&&S.pending.kind==='steal'&&a.kind!=='steal') return false;
+  // You must roll the dice before ANY other action on your turn — no buying
+  // dev cards, building, trading or moving ships first.
+  if(S.phase==='play'&&!S.rolled&&a.kind!=='roll') return false;
   switch(a.kind){
     case 'roll':
       if(S.phase!=='play'||S.rolled||S.turn!==idx) return false;
@@ -818,8 +821,9 @@ function applyAct(idx,a){
         payCost(p,COSTS.city); v.kind='city';
         addLog(`🏘️ ${p.name} built a city.`);
       }else return false;
-      // building a road/ship/settlement reveals any fogged hex it touches
-      if(a.what==='road'||a.what==='ship') revealFog(idx, edgeHexes(S.edges[a.key]).map(h=>h.id));
+      // building a road/ship/settlement reveals any fogged hex it TOUCHES —
+      // including hexes met only at the corners of the piece just placed
+      if(a.what==='road'||a.what==='ship') revealFog(idx, edgeTouchHexes(S.edges[a.key]));
       else if(a.what==='settlement') revealFog(idx, S.vertices[a.key].hexes);
       if(a.what==='settlement') claimTreasure(idx, S.vertices[a.key]);
       S.mode=S.freeRoads>0?'buildRoad':null;
@@ -950,6 +954,7 @@ function applyAct(idx,a){
       if(!okShip){ from.owner=idx; from.kind=fk; return false; }
       to.owner=idx; to.kind='ship';
       S.shipMoved=true; S.mode=null;
+      revealFog(idx, edgeTouchHexes(to));
       addLog(`⛵ ${p.name} moved a ship to a new route.`);
       updateLongest(); checkWin();
       return true;
@@ -1015,6 +1020,12 @@ function setupVertexValid(v,idx){
 function edgeHexes(e){
   const A=S.vertices[e.a].hexes, B=S.vertices[e.b].hexes;
   return A.filter(hid=>B.includes(hid)).map(hid=>S.hexes[hid]);
+}
+// every hex an edge TOUCHES: the two it borders plus the ones met at its corners
+function edgeTouchHexes(e){
+  const s=new Set();
+  [e.a,e.b].forEach(vk=>{ const v=S.vertices[vk]; if(v) v.hexes.forEach(h=>s.add(h)); });
+  return [...s];
 }
 function edgeBordersSea(e){ return edgeHexes(e).some(h=>h.terrain==='sea'); }
 function edgeBordersLand(e){ return edgeHexes(e).some(h=>h.terrain!=='sea'); }
@@ -1471,6 +1482,11 @@ function longestRoadFor(pi){
   let best=0; const used=new Set();
   function dfs(v,len){
     if(len>best) best=len;
+    // an opponent's settlement/city CUTS your route: the trail may end on
+    // their doorstep but never continues past it — only unbroken, continuous
+    // stretches of your own road/ship network count.
+    const vv=S.vertices[v];
+    if(len>0&&vv&&vv.owner>=0&&vv.owner!==pi) return;
     for(const nb of (adj[v]||[])){
       const ek=edgeKey(v,nb);
       if(!used.has(ek)){ used.add(ek); dfs(nb,len+1); used.delete(ek); }
@@ -1480,17 +1496,17 @@ function longestRoadFor(pi){
   return best;
 }
 function updateLongest(){
-  let bestLen=0, holder=-1, tie=false;
+  const prev=S.players.findIndex(p=>p.hasLongest);
+  let bestLen=0, holder=-1;
   S.players.forEach((p,i)=>{
     p.longest=longestRoadFor(i);
-    if(p.longest>=5){
-      if(p.longest>bestLen){ bestLen=p.longest; holder=i; tie=false; }
-      else if(p.longest===bestLen){ tie=true; }
-    }
+    if(p.longest>=5&&p.longest>bestLen){ bestLen=p.longest; holder=i; }
   });
+  // standard rules: a tie does NOT take the card from the current holder
+  if(prev>=0&&bestLen>=5&&S.players[prev].longest===bestLen) holder=prev;
   S.players.forEach((p,i)=>{
     const had=p.hasLongest;
-    p.hasLongest=(!tie&&i===holder);
+    p.hasLongest=(i===holder);
     if(p.hasLongest&&!had) addLog(S.variant==='sea'?`⛵ ${p.name} takes Longest Trade Route (+2 VP)!`:`🛣️ ${p.name} takes Longest Road (+2 VP)!`);
   });
 }
@@ -1584,7 +1600,8 @@ function animateCardPickup(){
   c.style.top=(r.top-w.top)+'px';
   wrapEl.appendChild(c);
   const dx=w.width-(r.left-w.left)-70;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  const raf=(typeof requestAnimationFrame==='function')?requestAnimationFrame:(fn)=>setTimeout(fn,16);
+  raf(()=>raf(()=>{
     c.style.transform=`translate(${dx}px,-34px) rotate(18deg)`;
     c.style.opacity='0';
   }));
@@ -2731,7 +2748,7 @@ function refresh(){
   if(playTab) playTab.classList.toggle('notify', interactive&&!S.rolled&&uiTab!=='play');
   const blocked7=S.mode==='moveRobber'||!!S.pending||!!(S.discardQueue&&S.discardQueue.length);
   $('endTurnBtn').disabled=!(interactive&&S.rolled)||blocked7;
-  const canBuild=interactive&&S.mode!=='moveRobber';
+  const canBuild=interactive&&S.rolled&&S.mode!=='moveRobber';
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
   $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
   $('offerTradeBtn').disabled=!canBuild;
@@ -2886,7 +2903,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v36</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v37</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
