@@ -247,6 +247,7 @@ function newGame(playerNames,botFlags,variant){
   lastDeckSize=-1;
   const b=buildBoardData(variant);
   S={
+    gid: Date.now()+'-'+Math.floor(Math.random()*1e9),
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
     ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
     variant: variant==='sea'?'sea':'classic',
@@ -1734,7 +1735,7 @@ function showRules(){
     <li>🌐 <b>Online:</b> create a room, share the 4-letter code, friends join from their own phones. No accounts needed!</li>
     <li>📱 <b>App:</b> use your browser's "Add to Home Screen" to launch Family Catan like an app — it even works offline.</li>
     <li>👆 <b>Quick build:</b> on your turn, every road, settlement spot and city you can afford glows — just tap a glowing spot to build it. No buttons needed.</li>
-    <li>🔍 <b>Zoom:</b> pinch the board to zoom in, drag to pan, double-tap to reset. Everything stays tappable.</li>
+    <li>🔍 <b>Zoom:</b> scroll or pinch to zoom in and out, drag to pan, double-tap or tap the ⤢ button to fit the whole board. Everything stays tappable.</li>
     <li>💾 <b>Auto-save:</b> your game is saved automatically — switch apps and come back, then resume from the menu.</li>
   </ul>
   <div class="btnrow"><button class="btn primary" id="rulesOk">Got it!</button></div>`)
@@ -1843,7 +1844,7 @@ function initBoardGestures(){
       const now=Date.now();
       // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
       const nearLast=Math.hypot(x-lastTapX,y-lastTapY)<48;
-      if(nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
+      if(nearLast&&now-lastTap<300&&Math.abs(ZOOM.s-1)>0.05){ resetZoom(); suppressClick=true; }
       lastTap=now; lastTapX=x; lastTapY=y;
     }
     moved=false;
@@ -1867,7 +1868,7 @@ function initBoardGestures(){
       if(pinch0>0){
         e.preventDefault();
         const k=px2units();
-        ZOOM.s=Math.min(4,Math.max(1,s0*d/pinch0));
+        ZOOM.s=Math.min(4,Math.max(0.55,s0*d/pinch0));
         ZOOM.tx=tx0+((a.clientX+b.clientX)/2-cx0)*k; ZOOM.ty=ty0+((a.clientY+b.clientY)/2-cy0)*k;
         clampPan(); applyZoom(); moved=true;
       }
@@ -1904,9 +1905,11 @@ function initBoardGestures(){
     if(suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
   },true);
   wrap.addEventListener('wheel',e=>{
-    e.preventDefault();
     const f=e.deltaY<0?1.12:1/1.12;
-    ZOOM.s=Math.min(4,Math.max(1,ZOOM.s*f));
+    const ns=Math.min(4,Math.max(0.55,ZOOM.s*f));
+    if(ns===ZOOM.s) return; // already at the limit — let the page scroll instead of trapping the wheel
+    e.preventDefault();
+    ZOOM.s=ns;
     applyZoom();
   },{passive:false});
 }
@@ -1923,6 +1926,8 @@ function renderBoard(){
   });
   const pad=S.variant==='sea'?64:105;
   let vx=minX-pad, vy=minY-pad, vw=maxX-minX+pad*2, vh=maxY-minY+pad*2;
+  // a new board (new game / online start) always opens fully fitted — zoom never leaks across games
+  if(renderBoard._gid!==S.gid){ renderBoard._gid=S.gid; ZOOM.s=1; ZOOM.tx=0; ZOOM.ty=0; applyZoom(); }
   // expand the viewBox to the frame's aspect ratio so the board fills it exactly — no empty band on either side
   const bwEl=$('boardWrap');
   const fw=bwEl?bwEl.clientWidth:0, fh=bwEl?bwEl.clientHeight:0;
@@ -2346,7 +2351,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v23</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v24</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -2526,6 +2531,7 @@ function boot(){
   $('buyDevBtn').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('dcDeck').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
+  const fitB=$('fitBtn'); if(fitB) fitB.onclick=()=>{ resetZoom(); };
   document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
