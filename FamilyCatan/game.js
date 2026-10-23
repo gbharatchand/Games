@@ -1669,12 +1669,12 @@ function renderOfferBox(){
   }else if(me&&NET.myIdx!==o.from&&me.res[o.wantR]>=o.wantN){
     const b=document.createElement('button'); b.className='btn green'; b.style.margin='4px';
     b.textContent='Accept';
-    b.onclick=()=>netSend({t:'act', a:{kind:'acceptOffer'}});
+    b.onclick=()=>{ if(NET.isHost){ hostApplyAct(NET.myIdx,{kind:'acceptOffer'}); } else { netSend({t:'act', a:{kind:'acceptOffer'}}); } };
     d.appendChild(b);
   }else if(me&&NET.myIdx===o.from){
     const b=document.createElement('button'); b.className='btn'; b.style.margin='4px';
     b.textContent='Cancel offer';
-    b.onclick=()=>netSend({t:'act', a:{kind:'declineOffer'}});
+    b.onclick=()=>{ if(NET.isHost){ hostApplyAct(NET.myIdx,{kind:'declineOffer'}); } else { netSend({t:'act', a:{kind:'declineOffer'}}); } };
     d.appendChild(b);
   }
   box.appendChild(d);
@@ -2371,7 +2371,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v26</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v27</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
