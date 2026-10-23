@@ -289,6 +289,27 @@
     font-size: .7rem; color: rgba(255,255,255,.65); pointer-events: none;
   }
   .port { pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
+  /* v34: standings strip, coach banner, production FX, confetti, scenario cards */
+  #standStrip { display: flex; gap: 6px; flex-wrap: wrap; }
+  .standCell { position: relative; flex: 1 1 0; min-width: 74px; display: flex; align-items: center; gap: 4px; background: #f4f7f2; border: 1.5px solid #cfd8cc; border-radius: 10px; padding: 4px 7px; font-size: .8rem; font-weight: 600; }
+  .standCell.turn { border-color: #d4a017; background: #fdf3d0; box-shadow: 0 0 0 2px rgba(212,160,23,.35); }
+  .standCell .sVp { margin-left: auto; font-weight: 800; white-space: nowrap; }
+  .standCell .sNm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gainFloat { position: absolute; top: -8px; right: 2px; font-size: .88rem; font-weight: 800; color: #1d6b35; text-shadow: 0 1px 0 #fff, 0 0 4px #fff; animation: floatUp 2.1s ease-out forwards; pointer-events: none; z-index: 3; }
+  @keyframes floatUp { 0% { transform: translateY(6px); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-26px); opacity: 0; } }
+  #nextHint { background: linear-gradient(90deg, #0d3a23, #14532d); color: #ffe9a8; border-radius: 10px; padding: 7px 10px; font-size: .92rem; font-weight: 700; text-align: center; min-height: 1.15em; }
+  .prodGlow { animation: prodPulse 1s ease-in-out 3; }
+  @keyframes prodPulse { 0%, 100% { opacity: .05; } 50% { opacity: .5; } }
+  #soundBtn { position: absolute; top: 118px; right: 10px; z-index: 6; width: 46px; height: 46px; border-radius: 50%; padding: 0; font-size: 1.25rem; line-height: 1; opacity: .92; }
+  .confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .confetti i { position: absolute; top: -14px; width: 9px; height: 14px; border-radius: 2px; animation-name: confettiFall; animation-timing-function: linear; animation-fill-mode: forwards; }
+  @keyframes confettiFall { to { transform: translateY(108vh) rotate(680deg); } }
+  .scenCard { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 48%; margin: 3px 1%; padding: 7px; border-radius: 12px; text-align: left; height: auto; }
+  .scenCard.sel { outline: 3px solid #d4a017; background: #fdf3d0; }
+  .scenCard .scenMap svg { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .scenCard .scenName { font-weight: 800; font-size: .88rem; }
+  .scenCard .scenMeta { font-size: .7rem; opacity: .78; font-weight: 600; white-space: normal; }
+  .avPick { font-size: 1.15rem; padding: 2px 9px; }
 </style>
 </head>
 <body>
@@ -299,12 +320,15 @@
       <div id="zoomHint">scroll or pinch to zoom · drag to pan · ⤢ fits the whole board</div>
       <button class="btn" id="restartBtn" title="Restart game">🔄</button>
       <button class="btn" id="fitBtn" title="Fit whole board">⤢</button>
+      <button class="btn" id="soundBtn" title="Sound on/off">🔊</button>
       <div id="dcDeck" title="Dev card deck — tap to buy">
         <div class="dc-cardback"></div><div class="dc-cardback"></div><div class="dc-cardback"><span>?</span></div>
         <div id="dcDeckCount">25</div>
       </div>
     </div>
     <div id="panel">
+      <div id="standStrip"></div>
+      <div id="nextHint"></div>
       <div id="offerBox"></div>
       <div id="tabBar">
         <button class="tabbtn active" data-tab="play">🎲 Play</button>
