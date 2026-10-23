@@ -13,6 +13,7 @@ const TERRAIN = {
   desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
   sea:   { color:'#a3d2f2', res:null,    icon:'' },
   gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
+  oasis: { color:'#69b96a', res:'gold',  icon:'🌴' },
 };
 const FOG_T = { color:'#93a5b1', icon:'🌫️' }; // hidden tile (Seafarers fog islands)
 const COSTS = {
@@ -58,27 +59,96 @@ function makeCode(){ const c='ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s=''; for(le
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ================= Board data (tested) ================= */
-function buildBoardData(variant){
+/* ================= Seafarers scenarios ================= */
+const SEA_SCENARIOS={
+  shores:  { name:'Heading for New Shores', short:'Shores',    icon:'\u26f5', winVP:13, fog:true,  desc:'The classic voyage \u2014 one big home island, new shores to discover.' },
+  treasure:{ name:'Treasure Islands',       short:'Treasure',  icon:'🏴\u200d\u2620\ufe0f', winVP:12, fog:true,  desc:'Six treasure isles \u2014 settle beside a 💰 to claim +1 VP and bonus resources.' },
+  oasis:   { name:'Oasis Crossing',         short:'Oasis',     icon:'🏜\ufe0f', winVP:12, fog:true,  desc:'A desert belt splits the home island \u2014 the 🌴 oasis at its heart pays any resource.' },
+  four:    { name:'The Four Islands',       short:'Four Islands', icon:'🏝\ufe0f', winVP:12, fog:false, desc:'Four equal islands, no fog. Start anywhere \u2014 +2 VP for each new island you settle.' },
+  fog:     { name:'The Fog Island',         short:'Fog Island', icon:'🌫\ufe0f', winVP:13, fog:true,  desc:'A tiny home island and a vast fogged world waiting to be discovered.' },
+};
+function scenCfg(){ return (S&&S.variant==='sea'&&SEA_SCENARIOS[S.scenario])||SEA_SCENARIOS.shores; }
+// Balanced terrain/number kits for scenario boards whose land count differs
+// from the classic 32 (the spread optimizer shuffles them into place).
+function seaKit(nLand,nDesert){
+  const order=['wood','wheat','sheep','ore','wood','wheat','sheep','brick'];
+  const terrains=[]; let left=nLand-nDesert, i=0;
+  while(left>0){ terrains.push(order[i%order.length]); i++; left--; }
+  for(let k=0;k<nDesert;k++) terrains.push('desert');
+  const pool=[2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,3,4,5,9,10,11,2,12,6,8,5,4,9];
+  const numbers=[];
+  for(let k=0;k<nLand-nDesert;k++) numbers.push(pool[k%pool.length]);
+  return { terrains, numbers };
+}
+
+function buildBoardData(variant, scenario){
   const seaMode = variant==='sea';
+  const scen = seaMode ? (SEA_SCENARIOS[scenario]||SEA_SCENARIOS.shores) : null;
+  const scenId = seaMode ? (SEA_SCENARIOS[scenario]?scenario:'shores') : null;
   let cells; // [{q,r,land}]
   let terrains, numbers;
   if(seaMode){
-    // Seafarers "Heading for New Shores": a big main island + 4 outer islands in a sea frame
-    const LAND=[
-      [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[-2,2],[-1,2],[0,2],[1,2],[2,2],[-2,3],[-1,3],[0,3],[1,3],[-2,4],[-1,4],[0,4], // main island (19)
-      [4,0],[5,0],[4,1],[5,1],   // island B (4)
-      [4,4],[5,4],[4,5],[5,5],   // island C (4)
-      [1,6],[2,6],[2,7],         // island D (3)
-      [5,-2],[6,-2],             // island E (2)
-    ];
+    const LAYOUTS={
+      // "Heading for New Shores": a big main island + 4 outer islands in a sea frame
+      shores:[
+        [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[-2,2],[-1,2],[0,2],[1,2],[2,2],[-2,3],[-1,3],[0,3],[1,3],[-2,4],[-1,4],[0,4],
+        [4,0],[5,0],[4,1],[5,1],
+        [4,4],[5,4],[4,5],[5,5],
+        [1,6],[2,6],[2,7],
+        [5,-2],[6,-2],
+      ],
+      // "Treasure Islands": a modest home island + 6 small treasure isles
+      treasure:[
+        [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2],[0,3],[1,3],[2,3],
+        [6,0],[7,0],[6,1],[7,-1],
+        [6,5],[7,5],[6,6],[7,6],
+        [1,7],[2,7],[2,6],
+        [-4,3],[-4,4],[-3,3],
+        [-3,-2],[-2,-2],[-3,-1],
+        [4,-3],[5,-3],
+      ],
+      // "Oasis Crossing": one wide home island (split by a desert belt) + 2 islets
+      oasis:[
+        [0,0],[1,0],[2,0],[3,0],
+        [-1,1],[0,1],[1,1],[2,1],[3,1],
+        [-1,2],[0,2],[1,2],[2,2],[3,2],[4,2],
+        [-1,3],[0,3],[1,3],[2,3],[3,3],
+        [-1,4],[0,4],[1,4],[2,4],
+        [7,1],[8,1],[7,2],
+        [-4,5],[-3,5],
+      ],
+      // "The Four Islands": four equal islands, start anywhere
+      four:[
+        [0,0],[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1],[2,0],
+        [7,0],[8,0],[8,-1],[7,-1],[6,0],[6,1],[7,1],[9,0],
+        [0,7],[1,7],[1,6],[0,6],[-1,7],[-1,8],[0,8],[2,7],
+        [7,7],[8,7],[8,6],[7,6],[6,7],[6,8],[7,8],[9,7],
+      ],
+      // "The Fog Island": a tiny home island, everything else hidden in fog
+      fog:[
+        [0,1],[1,1],[1,0],[0,0],[-1,1],[-1,2],[0,2],[2,1],[2,2],
+        [6,-1],[7,-1],[6,0],[7,-2],
+        [6,4],[7,4],[6,5],[5,4],
+        [1,6],[2,6],[1,7],[0,6],
+        [-4,1],[-4,2],[-3,1],[-4,0],
+        [4,-4],[5,-4],[4,-3],[5,-3],
+        [-3,-3],[-2,-3],[-3,-2],
+      ],
+    };
+    const LAND=LAYOUTS[scenId];
     const landSet=new Set(LAND.map(c=>c[0]+','+c[1]));
     const seaSet=new Set();
     const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
     LAND.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=(q+dq)+','+(r+dr); if(!landSet.has(k)) seaSet.add(k); }));
     cells=LAND.map(([q,r])=>({q,r,land:true}));
     [...seaSet].forEach(k=>{ const [q,r]=k.split(',').map(Number); cells.push({q,r,land:false}); });
-    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','desert']);
-    numbers=shuffle([2,3,3,3,4,4,5,5,5,6,6,8,8,9,9,9,10,10,11,11,12,2,3,4,5,6,8,9,10,11,12]);
+    if(LAND.length===32){
+      terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','desert']);
+      numbers=shuffle([2,3,3,3,4,4,5,5,5,6,6,8,8,9,9,9,10,10,11,11,12,2,3,4,5,6,8,9,10,11,12]);
+    }else{
+      const kit=seaKit(LAND.length,1);
+      terrains=kit.terrains; numbers=kit.numbers;
+    }
   }else{
     // Classic, large board: full radius-3 island (37 hexes)
     const rows=[{r:0,qs:[0,1,2,3]},{r:1,qs:[-1,0,1,2,3]},{r:2,qs:[-2,-1,0,1,2,3]},{r:3,qs:[-3,-2,-1,0,1,2,3]},{r:4,qs:[-3,-2,-1,0,1,2]},{r:5,qs:[-3,-2,-1,0,1]},{r:6,qs:[-3,-2,-1,0]}];
@@ -183,9 +253,40 @@ function buildBoardData(variant){
       const cands=byIsl[id]; const h=cands[Math.floor(Math.random()*cands.length)];
       if(h) h.terrain='gold';
     });
+    // Treasure Islands: one treasure buried on each foreign island — settle
+    // beside it (once revealed) to claim +1 VP and bonus resources.
+    if(scenId==='treasure'){
+      const tByIsl={};
+      hexes.forEach(h=>{ if(h.terrain!=='sea'&&h.terrain!=='desert'&&h.terrain!=='gold'&&h.island!==mainIsland){ (tByIsl[h.island]=tByIsl[h.island]||[]).push(h); } });
+      Object.values(tByIsl).forEach(list=>{ const h=list[Math.floor(Math.random()*list.length)]; if(h) h.treasure=true; });
+    }
+    // Oasis Crossing: a desert belt across the middle of the home island,
+    // with an oasis at its heart (produces any resource, like a gold field).
+    if(scenId==='oasis'){
+      const main=hexes.filter(h=>h.island===mainIsland);
+      const ys=main.map(h=>hexCenter(h.q,h.r).y).sort((a,b)=>a-b);
+      const medY=ys[Math.floor(ys.length/2)];
+      const belt=main.slice().sort((a,b)=>{
+        const ca=hexCenter(a.q,a.r), cb=hexCenter(b.q,b.r);
+        return (Math.abs(ca.y-medY)-Math.abs(cb.y-medY)) || (ca.x-cb.x);
+      }).slice(0,5).sort((a,b)=>hexCenter(a.q,a.r).x-hexCenter(b.q,b.r).x);
+      const outside=main.filter(h=>!belt.includes(h));
+      // swap (terrain,number) pairs out of the belt first, so the island's
+      // resource mix is preserved before the belt is overwritten
+      belt.forEach((h,i)=>{
+        const o=outside[(i*3)%outside.length];
+        if(o){ const t=h.terrain, n=h.number; h.terrain=o.terrain; h.number=o.number; o.terrain=t; o.number=n; }
+      });
+      belt.forEach((h,i)=>{
+        if(i===2){
+          h.terrain='oasis';
+          if(h.number==null){ const donor=belt.find(x=>x.number!=null); h.number=donor?donor.number:5; }
+        }else{ h.terrain='desert'; h.number=null; }
+      });
+    }
     // Fog of discovery: every foreign-island land hex starts hidden. Building a
     // road, ship or settlement next to one flips it face-up (see revealFog).
-    hexes.forEach(h=>{ if(h.terrain!=='sea'&&h.island!==mainIsland) h.fog=true; });
+    if(scen.fog) hexes.forEach(h=>{ if(h.terrain!=='sea'&&h.island!==mainIsland) h.fog=true; });
   }
   const vertices={}, edges={};
   hexes.forEach(h=>{
@@ -260,24 +361,25 @@ function portRate(pi,res){
 
 /* ================= Game state ================= */
 let S=null;
-function newGame(playerNames,botFlags,variant){
+function newGame(playerNames,botFlags,variant,scenario){
   clearSave();
   lastDeckSize=-1;
-  const b=buildBoardData(variant);
+  const b=buildBoardData(variant,scenario);
   S={
     gid: Date.now()+'-'+Math.floor(Math.random()*1e9),
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
     ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
     variant: variant==='sea'?'sea':'classic',
+    scenario: variant==='sea'?(SEA_SCENARIOS[scenario]?scenario:'shores'):null,
     mainIsland: b.mainIsland||0,
-    winVP: variant==='sea'?13:10,
+    winVP: variant==='sea'?(SEA_SCENARIOS[scenario]||SEA_SCENARIOS.shores).winVP:10,
     chitAt:{},
     pirateHex:-1, movingPirate:false, shipMoved:false, goldQueue:[],
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
       longest:0, hasLongest:false, knights:0, hasLargestArmy:false, dc:false,
-      chitVP:0, islandsWon:[],
+      chitVP:0, islandsWon:[], homeIsland:null,
     })),
     turn:0, phase:'setup', dice:[1,1], rolled:false,
     setupQueue:[], setupIdx:0, setupSub:'settlement', setupVertex:null,
@@ -306,6 +408,21 @@ function vp(p){
 function canAfford(p,cost){ return Object.keys(cost).every(r=>p.res[r]>=cost[r]); }
 function payCost(p,cost){ Object.keys(cost).forEach(r=>{ p.res[r]-=cost[r]; }); }
 function giveRes(p,res,n){ p.res[res]+=n; }
+/* ---- Trade-offer bundles: an offer is {from, give:{res:n}, want:{res:n}} ---- */
+function cleanBundle(b){
+  const o={};
+  if(b) for(const r of RES){ const n=Math.floor(+b[r]||0); if(n>0) o[r]=Math.min(n,9); }
+  return o;
+}
+function bundleTotal(b){ return RES.reduce((s,r)=>s+((b&&b[r])||0),0); }
+function bundlesEqual(a,b){ return RES.every(r=>((a&&a[r])||0)===((b&&b[r])||0)); }
+function fmtBundle(b){ const s=RES.filter(r=>b&&b[r]>0).map(r=>b[r]+RES_ICON[r]).join(' '); return s||'—'; }
+function validOfferBundles(p,give,want){
+  return bundleTotal(give)>=1&&bundleTotal(want)>=1&&!bundlesEqual(give,want)&&canAfford(p,give);
+}
+// tolerate offers saved by older builds ({giveN,giveR,wantN,wantR})
+function offerGive(o){ if(o.give) return o.give; const b={}; if(o.giveR) b[o.giveR]=o.giveN||1; return b; }
+function offerWant(o){ if(o.want) return o.want; const b={}; if(o.wantR) b[o.wantR]=o.wantN||1; return b; }
 function addLog(msg){
   S.log.unshift(msg);
   if(S.log.length>40) S.log.pop();
@@ -607,6 +724,7 @@ function applyAct(idx,a){
       const v=S.vertices[a.key];
       if(!v||!setupVertexValid(v,idx)) return false;
       v.owner=idx; v.kind='settlement'; S.setupVertex=a.key; S.setupSub='road'; S.mode='setupRoad';
+      if(p.homeIsland==null){ const isls=vertexIslands(v); if(isls.length) p.homeIsland=isls[0]; }
       addLog(`🏠 ${p.name} placed a settlement.`);
       return true;
     }
@@ -658,9 +776,12 @@ function applyAct(idx,a){
         payCost(p,COSTS.settlement); v.owner=idx; v.kind='settlement';
         addLog(`🏠 ${p.name} built a settlement.`);
         if(S.variant==='sea'){
-          // Seafarers island bonus: +2 VP for your first settlement on each new island
+          // Seafarers island bonus: +2 VP for your first settlement on each new
+          // island (new = not your home island; home is the main island, or —
+          // in The Four Islands — the island you started on)
+          const home=(p.homeIsland!=null?p.homeIsland:S.mainIsland);
           for(const isl of vertexIslands(v)){
-            if(isl!==S.mainIsland&&!(p.islandsWon||[]).includes(isl)){
+            if(isl!==home&&!(p.islandsWon||[]).includes(isl)){
               p.islandsWon.push(isl); p.chitVP=(p.chitVP||0)+2; S.chitAt[a.key]=idx;
               addLog(`⭐ ${p.name} discovered a new island! +2 VP`);
             }
@@ -675,6 +796,7 @@ function applyAct(idx,a){
       // building a road/ship/settlement reveals any fogged hex it touches
       if(a.what==='road'||a.what==='ship') revealFog(idx, edgeHexes(S.edges[a.key]).map(h=>h.id));
       else if(a.what==='settlement') revealFog(idx, S.vertices[a.key].hexes);
+      if(a.what==='settlement') claimTreasure(idx, S.vertices[a.key]);
       S.mode=S.freeRoads>0?'buildRoad':null;
       updateLongest(); checkWin();
       return true;
@@ -689,18 +811,29 @@ function applyAct(idx,a){
     }
     case 'offer':{
       if(S.phase!=='play'||S.turn!==idx||S.offer) return false;
-      if(a.giveR===a.wantR||p.res[a.giveR]<a.giveN) return false;
-      S.offer={from:idx, giveN:a.giveN, giveR:a.giveR, wantN:a.wantN, wantR:a.wantR};
-      addLog(`🤝 ${p.name} offers ${a.giveN}${RES_ICON[a.giveR]} for ${a.wantN}${RES_ICON[a.wantR]}.`);
+      const give=cleanBundle(a.give), want=cleanBundle(a.want);
+      if(!validOfferBundles(p,give,want)) return false;
+      S.offer={from:idx, give:give, want:want};
+      addLog(`🤝 ${p.name} offers ${fmtBundle(give)} for ${fmtBundle(want)}.`);
+      return true;
+    }
+    case 'counterOffer':{
+      // anyone the standing offer is open to can send back a flipped, edited offer
+      if(!S.offer||S.offer.from===idx) return false;
+      const give=cleanBundle(a.give), want=cleanBundle(a.want);
+      if(!validOfferBundles(p,give,want)) return false;
+      S.offer={from:idx, give:give, want:want};
+      addLog(`↩️ ${p.name} counters: ${fmtBundle(give)} for ${fmtBundle(want)}.`);
       return true;
     }
     case 'acceptOffer':{
       if(!S.offer||S.offer.from===idx) return false;
       const o=S.offer, from=S.players[o.from];
-      if(p.res[o.wantR]<o.wantN||from.res[o.giveR]<o.giveN) return false;
-      from.res[o.giveR]-=o.giveN; p.res[o.giveR]+=o.giveN;
-      p.res[o.wantR]-=o.wantN; from.res[o.wantR]+=o.wantN;
-      addLog(`🤝 ${from.name} traded ${o.giveN}${RES_ICON[o.giveR]} for ${o.wantN}${RES_ICON[o.wantR]} with ${p.name}.`);
+      const give=offerGive(o), want=offerWant(o);
+      if(!canAfford(p,want)||!canAfford(from,give)) return false;
+      payCost(from,give); RES.forEach(r=>{ if(give[r]) p.res[r]+=give[r]; });
+      payCost(p,want); RES.forEach(r=>{ if(want[r]) from.res[r]+=want[r]; });
+      addLog(`🤝 ${from.name} traded ${fmtBundle(give)} for ${fmtBundle(want)} with ${p.name}.`);
       S.offer=null;
       return true;
     }
@@ -847,8 +980,9 @@ function setupVertexValid(v,idx){
   if(v.owner!==-1) return false;
   if(S.variant==='sea'){
     if(!vertexTouchesLand(v)) return false;
-    // Seafarers setup: starting settlements go on the main island only
-    if(!vertexIslands(v).includes(S.mainIsland)) return false;
+    // Seafarers setup: starting settlements go on the main island only —
+    // except The Four Islands, where you may start on any island
+    if(S.scenario!=='four'&&!vertexIslands(v).includes(S.mainIsland)) return false;
   }
   for(const nb of v.neighbors){ if(S.vertices[nb].owner!==-1) return false; }
   return true;
@@ -939,8 +1073,8 @@ function distribute(sum){
   const goldDue={};
   S.hexes.forEach(h=>{
     if(h.number!==sum||h.id===S.robberHex||h.fog) return;
-    if(h.terrain==='gold'){
-      // gold field: adjacent owners choose that many resources of any kind
+    if(h.terrain==='gold'||h.terrain==='oasis'){
+      // gold field / oasis: adjacent owners choose that many resources of any kind
       for(const k in S.vertices){
         const v=S.vertices[k];
         if(v.owner>=0&&v.hexes.includes(h.id)) goldDue[v.owner]=(goldDue[v.owner]||0)+(v.kind==='city'?2:1);
@@ -961,6 +1095,20 @@ function goldAutoPicks(p,count){
   const have={...p.res}; const picks=[];
   for(let i=0;i<count;i++){ let best=RES[0]; for(const r of RES) if(have[r]<have[best]) best=r; picks.push(best); have[best]++; }
   return picks;
+}
+// Treasure Islands: settling beside a revealed treasure claims it.
+function claimTreasure(idx, v){
+  if(!v) return;
+  const p=S.players[idx];
+  v.hexes.forEach(hid=>{
+    const h=S.hexes[hid];
+    if(!h||!h.treasure||h.fog) return;
+    h.treasure=false;
+    p.chitVP=(p.chitVP||0)+1;
+    const r1=RES[Math.floor(Math.random()*RES.length)], r2=RES[Math.floor(Math.random()*RES.length)];
+    giveRes(p,r1,1); giveRes(p,r2,1);
+    addLog(`💰 ${p.name} claimed a treasure! +1 VP, and found 1${RES_ICON[r1]} 1${RES_ICON[r2]}.`);
+  });
 }
 // Fog of discovery: building next to a fogged hex flips it face-up for everyone.
 // The discoverer pockets 1 of the revealed resource (a gold field = a free choice).
@@ -1125,6 +1273,7 @@ function vertexScore(v){
   v.hexes.forEach(hid=>{ const h=S.hexes[hid];
     if(h.number!=null&&!h.fog){ s+=pips(h.number); const r=TERRAIN[h.terrain].res; if(r&&!seen.has(r)){ s+=1.5; seen.add(r); } } });
   if(S.ports&&S.ports.some(pt=>pt.vertex===v.key)) s+=4; // port bonus
+  if(v.hexes.some(hid=>{ const h=S.hexes[hid]; return h.treasure&&!h.fog; })) s+=6; // treasure bonus
   return s;
 }
 function bestSetupVertex(i){
@@ -1737,33 +1886,28 @@ function renderOfferBox(){
   const box=$('offerBox'); if(!box) return; box.innerHTML='';
   if(!S||!S.offer) return;
   const o=S.offer, from=S.players[o.from];
+  const give=offerGive(o), want=offerWant(o);
   const d=document.createElement('div'); d.className='offerBanner';
-  d.innerHTML=`🤝 <b>${escapeHtml(from.name)}</b> offers ${o.giveN}${RES_ICON[o.giveR]} for ${o.wantN}${RES_ICON[o.wantR]}`;
-  const me=NET.mode==='local'?null:S.players[NET.myIdx];
+  d.innerHTML=`🤝 <b>${escapeHtml(from.name)}</b> offers ${fmtBundle(give)} for ${fmtBundle(want)}`;
+  const mkBtn=(label,cls,fn)=>{ const b=document.createElement('button'); b.className='btn '+(cls||''); b.style.margin='4px'; b.textContent=label; b.onclick=fn; d.appendChild(b); };
+  const act=(i,a)=>{ if(NET.mode==='online'&&!NET.isHost&&i===NET.myIdx){ netSend({t:'act', a:a}); } else { hostApplyAct(i,a); } };
   if(NET.mode==='local'){
-    // local: any other player taps to accept
+    // local: any other player can accept or counter
     S.players.forEach((p,i)=>{
-      if(i!==o.from&&p.res[o.wantR]>=o.wantN){
-        const b=document.createElement('button'); b.className='btn'; b.style.margin='4px';
-        b.textContent=`${p.name} accepts`;
-        b.onclick=()=>{ hostApplyAct(i,{kind:'acceptOffer'}); };
-        d.appendChild(b);
-      }
+      if(i===o.from) return;
+      if(canAfford(p,want)) mkBtn(`${p.name} accepts`,'green',()=>hostApplyAct(i,{kind:'acceptOffer'}));
+      mkBtn(`${p.name} counters`,'',()=>offerTradeUI({asIdx:i, counter:true, give:Object.assign({},want), want:Object.assign({},give)}));
     });
-    const dec=document.createElement('button'); dec.className='btn'; dec.style.margin='4px';
-    dec.textContent='No deal';
-    dec.onclick=()=>{ hostApplyAct(o.from,{kind:'declineOffer'}); };
-    d.appendChild(dec);
-  }else if(me&&NET.myIdx!==o.from&&me.res[o.wantR]>=o.wantN){
-    const b=document.createElement('button'); b.className='btn green'; b.style.margin='4px';
-    b.textContent='Accept';
-    b.onclick=()=>{ if(NET.isHost){ hostApplyAct(NET.myIdx,{kind:'acceptOffer'}); } else { netSend({t:'act', a:{kind:'acceptOffer'}}); } };
-    d.appendChild(b);
-  }else if(me&&NET.myIdx===o.from){
-    const b=document.createElement('button'); b.className='btn'; b.style.margin='4px';
-    b.textContent='Cancel offer';
-    b.onclick=()=>{ if(NET.isHost){ hostApplyAct(NET.myIdx,{kind:'declineOffer'}); } else { netSend({t:'act', a:{kind:'declineOffer'}}); } };
-    d.appendChild(b);
+    mkBtn('No deal','',()=>hostApplyAct(o.from,{kind:'declineOffer'}));
+  }else{
+    const me=S.players[NET.myIdx];
+    if(me&&NET.myIdx!==o.from){
+      if(canAfford(me,want)) mkBtn('Accept','green',()=>act(NET.myIdx,{kind:'acceptOffer'}));
+      mkBtn('↩️ Counter','',()=>offerTradeUI({counter:true, give:Object.assign({},want), want:Object.assign({},give)}));
+      mkBtn('Decline','',()=>act(NET.myIdx,{kind:'declineOffer'}));
+    }else if(me&&NET.myIdx===o.from){
+      mkBtn('Cancel offer','',()=>act(NET.myIdx,{kind:'declineOffer'}));
+    }
   }
   box.appendChild(d);
 }
@@ -1785,22 +1929,50 @@ function bankTradeUI(){
     else{ hostApplyAct(S.turn,{kind:'bankTrade', give:g, get:w}); }
   };
 }
-function offerTradeUI(){
+function offerTradeUI(opts){
   if(!S) return;
-  const ov=overlay(`<h2>🤝 Trade Offer</h2>
-    <div class="tradeRow"><span>I give:</span><select id="oGiveN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
-    <select id="oGive">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
-    <div class="tradeRow"><span>I want:</span><select id="oWantN">${[1,2,3,4].map(n=>`<option>${n}</option>`).join('')}</select>
-    <select id="oWant">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
-    <div class="btnrow"><button class="btn primary" id="oPost">Post Offer</button><button class="btn" id="oCancel">Cancel</button></div>`);
+  opts=opts||{};
+  const asIdx=opts.asIdx!==undefined?opts.asIdx:(NET.mode==='local'?S.turn:NET.myIdx);
+  const me=S.players[asIdx]; if(!me) return;
+  const isCounter=!!opts.counter;
+  const gSel=cleanBundle(opts.give), wSel=cleanBundle(opts.want);
+  const rowHtml=(side,r,sel)=>{
+    const owned=side==='g'?` <small>(${me.res[r]})</small>`:'';
+    return `<div class="tradeRow"><span style="min-width:92px">${RES_ICON[r]} ${RES_NAME[r]}${owned}</span>
+      <button class="btn stepBtn" style="padding:2px 12px" data-side="${side}" data-r="${r}" data-d="-1">−</button>
+      <b id="cnt-${side}-${r}" style="min-width:22px;text-align:center">${sel[r]||0}</b>
+      <button class="btn stepBtn" style="padding:2px 12px" data-side="${side}" data-r="${r}" data-d="1">+</button></div>`;
+  };
+  const ov=overlay(`<h2>${isCounter?'↩️ Counter-Offer':'🤝 Trade Offer'}</h2>
+    <p style="margin:2px 0"><b>${escapeHtml(me.name)} gives:</b> <small>(mix any resources, up to what you have)</small></p>
+    ${RES.map(r=>rowHtml('g',r,gSel)).join('')}
+    <p style="margin:8px 0 2px"><b>${escapeHtml(me.name)} wants:</b></p>
+    ${RES.map(r=>rowHtml('w',r,wSel)).join('')}
+    <div class="btnrow"><button class="btn primary" id="oPost">${isCounter?'Send Counter-Offer':'Post Offer'}</button><button class="btn" id="oCancel">Cancel</button></div>`);
+  const post=ov.querySelector('#oPost');
+  const paint=()=>{
+    RES.forEach(r=>{
+      const cg=ov.querySelector('#cnt-g-'+r), cw=ov.querySelector('#cnt-w-'+r);
+      if(cg) cg.textContent=gSel[r]||0;
+      if(cw) cw.textContent=wSel[r]||0;
+    });
+    post.disabled=!(bundleTotal(gSel)>=1&&bundleTotal(wSel)>=1&&!bundlesEqual(gSel,wSel));
+  };
+  ov.addEventListener('click',e=>{
+    const b=e.target.closest('.stepBtn'); if(!b) return;
+    const sel=b.dataset.side==='g'?gSel:wSel, r=b.dataset.r, d=+b.dataset.d;
+    const cap=b.dataset.side==='g'?me.res[r]:4;
+    sel[r]=Math.max(0,Math.min(cap,(sel[r]||0)+d));
+    if(sel[r]===0) delete sel[r];
+    paint();
+  });
+  paint();
   ov.querySelector('#oCancel').onclick=closeOverlay;
-  ov.querySelector('#oPost').onclick=()=>{
-    const a={kind:'offer',
-      giveN:+ov.querySelector('#oGiveN').value, giveR:ov.querySelector('#oGive').value,
-      wantN:+ov.querySelector('#oWantN').value, wantR:ov.querySelector('#oWant').value};
+  post.onclick=()=>{
+    const a={kind:isCounter?'counterOffer':'offer', give:cleanBundle(gSel), want:cleanBundle(wSel)};
     closeOverlay();
     if(NET.mode==='online'&&!NET.isHost){ netSend({t:'act', a:a}); }
-    else{ hostApplyAct(S.turn,a); }
+    else{ hostApplyAct(asIdx,a); }
   };
 }
 function showPassDevice(){
@@ -1824,7 +1996,7 @@ function showRules(){
   <ul class="rulesList">
     <li>🎲 <b>Roll the dice</b> each turn. Hexes showing that number produce resources for adjacent settlements (1 card) and cities (2 cards). The robber blocks its hex.</li>
     <li>🏠 <b>Build:</b> Road = 1🧱 1🪵 · Settlement = 1🧱 1🪵 1🐑 1🌾 · City (upgrade) = 2🌾 3⛰️.</li>
-    <li>🔄 <b>Trade</b> with the bank (4:1 — 3:1 at a corner ⚓ port, 2:1 at a matching ⚓ port), or make offers to other players.</li>
+    <li>🔄 <b>Trade</b> with the bank (4:1 — 3:1 at a corner ⚓ port, 2:1 at a matching ⚓ port), or make offers to other players — offers can mix several resources, and the other player can accept, decline, or send a <b>counter-offer</b> back.</li>
     <li>⚓ <b>Ports:</b> coastal spots marked ⚓. Build a settlement there to unlock 2:1 trades for that resource — corner ❓ ports trade ANY resource at 3:1.</li>
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
@@ -2080,6 +2252,10 @@ function renderBoard(){
     if(h.id===S.pirateHex){
       const pt=el('text',{x:c.x, y:c.y+16, 'text-anchor':'middle','font-size':'36'},hg);
       pt.textContent='🏴‍☠️';
+    }
+    if(h.treasure&&!h.fog){
+      const tt=el('text',{x:c.x+34, y:c.y-26, 'text-anchor':'middle','font-size':'22'},hg);
+      tt.textContent='💰';
     }
   });
   for(const ek in S.edges){
@@ -2426,6 +2602,8 @@ function profileBarHtml(){
 
 /* ================= Menu & lobby ================= */
 let menuVariant='classic';
+let menuScenario='shores';
+try{ const sv=localStorage.getItem('familycatan-scenario'); if(sv&&SEA_SCENARIOS[sv]) menuScenario=sv; }catch(e){}
 try{ menuVariant=localStorage.getItem('familycatan-variant')==='sea'?'sea':'classic'; }catch(e){}
 function showMenu(){
   const save=loadSave();
@@ -2448,6 +2626,7 @@ function showMenu(){
       <button class="btn" id="mVarC">🏝️ Classic</button>
       <button class="btn" id="mVarS">⛵ Seafarers</button>
     </div>
+    <div class="btnrow" id="mScenRow" style="flex-wrap:wrap;justify-content:center"></div>
     ${profileBarHtml()}
     ${resumeHtml}
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
@@ -2461,16 +2640,32 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v28</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v30</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
     ov.querySelector('#mVarS').classList.toggle('primary', menuVariant==='sea');
     const sub=ov.querySelector('#menuSub');
-    if(sub) sub.textContent = menuVariant==='sea'
-      ? '⛵ Seafarers: sail to new islands, earn +2 VP discovery bonuses — first to 13 VP wins!'
-      : '2–4 players. Build, trade, race to 10 points!';
+    const srow=ov.querySelector('#mScenRow');
+    if(menuVariant==='sea'){
+      const sc=SEA_SCENARIOS[menuScenario];
+      if(sub) sub.textContent='⛵ '+sc.name+': '+sc.desc;
+      if(srow){
+        srow.style.display='flex';
+        srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>`<button class="btn scenChip${k===menuScenario?' primary':''}" data-sc="${k}" style="margin:2px">${SEA_SCENARIOS[k].icon} ${SEA_SCENARIOS[k].short}</button>`).join('');
+      }
+    }else{
+      if(sub) sub.textContent='2–4 players. Build, trade, race to 10 points!';
+      if(srow) srow.style.display='none';
+    }
   };
+  const srowEl=ov.querySelector('#mScenRow');
+  if(srowEl) srowEl.addEventListener('click',e=>{
+    const b=e.target.closest('.scenChip'); if(!b) return;
+    menuScenario=b.dataset.sc;
+    try{ localStorage.setItem('familycatan-scenario',menuScenario); }catch(err){}
+    paintVar();
+  });
   ov.querySelector('#mVarC').onclick=()=>{ menuVariant='classic'; try{ localStorage.setItem('familycatan-variant','classic'); }catch(e){} paintVar(); };
   ov.querySelector('#mVarS').onclick=()=>{ menuVariant='sea'; try{ localStorage.setItem('familycatan-variant','sea'); }catch(e){} paintVar(); };
   paintVar();
@@ -2520,7 +2715,7 @@ function showMenu(){
       NET.mode='local'; NET.myIdx=0;
       const names=[nm], bots=[false];
       for(let k=1;k<=bn;k++){ names.push('CPU '+k); bots.push(true); }
-      newGame(names,bots,menuVariant);
+      newGame(names,bots,menuVariant,menuScenario);
       setNetStatus('solo vs CPU','on');
       setHint(`${escapeHtml(nm)}: tap a highlighted spot for your settlement.`);
       refresh();
@@ -2537,6 +2732,7 @@ function showMenu(){
     try{
       NET.mode='online';
       NET.variant=menuVariant;
+      NET.scenario=menuScenario;
       const code=await hostRoom(name());
       closeOverlay();
       showLobby(true);
@@ -2585,7 +2781,7 @@ function showLocalSetup(){
     const names=[];
     for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
     closeOverlay();
-    newGame(names,undefined,menuVariant);
+    newGame(names,undefined,menuVariant,menuScenario);
     setNetStatus('same device','on');
     setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
     refresh();
@@ -2597,7 +2793,7 @@ function showLobby(isHost){
   const ov=overlay(`<h2>🌐 ${isHost?'Room created!':'Joined!'}</h2>
     <p>Share this code with family:</p>
     <div class="roomCode">${NET.code}</div>
-    ${isHost?`<p>Mode: <b>${NET.variant==='sea'?'⛵ Seafarers (first to 13 VP)':'🏝️ Classic (first to 10 VP)'}</b></p>`:''}
+    ${isHost?`<p>Mode: <b>${NET.variant==='sea'?('⛵ Seafarers — '+(SEA_SCENARIOS[NET.scenario||'shores'].name)+' (first to '+(SEA_SCENARIOS[NET.scenario||'shores'].winVP)+' VP)'):'🏝️ Classic (first to 10 VP)'}</b></p>`:''}
     <div id="lobbyList"></div>
     ${isHost?'<div class="btnrow"><button class="btn primary" id="startGameBtn">▶ Start Game</button></div>':'<p>Waiting for the host to start…</p>'}
     <p style="font-size:.8rem;color:#666">Everyone opens <b>this same page</b> and joins with the code. No accounts needed.</p>`);
@@ -2607,7 +2803,7 @@ function showLobby(isHost){
     ov.querySelector('#startGameBtn').onclick=()=>{
       if(NET.lobbyPlayers.length<2){ alert('Need at least 2 players to start.'); return; }
       const names=NET.lobbyPlayers.map(p=>p.name);
-      newGame(names,undefined,NET.variant);
+      newGame(names,undefined,NET.variant,NET.scenario);
       NET.started=true; NET.myIdx=0;
       for(const idx in NET.conns){ try{ NET.conns[idx].send({t:'state', s:serializeState()}); }catch(e){} }
       closeLobbyIfOpen();
