@@ -2321,8 +2321,11 @@ function showMenu(){
       resumeHtml=`<div class="btnrow"><button class="btn green" id="mRejoin">🔄 Rejoin room ${escapeHtml(save.net.code)}</button></div>`;
     }
   }
-  const ov=overlay(`<h2>🏝️ Family Catan</h2>
-    <p id="menuSub">2–4 players. Build, trade, race to 10 points!</p>
+  const ov=overlay(`<div class="menuHero">
+      <img class="menuIcon" src="./icon-512.png" alt="Family Catan">
+      <div class="menuTitle">Family Catan</div>
+      <p id="menuSub">2–4 players. Build, trade, race to 10 points!</p>
+    </div>
     <div class="btnrow" id="mVarRow">
       <button class="btn" id="mVarC">🏝️ Classic</button>
       <button class="btn" id="mVarS">⛵ Seafarers</button>
@@ -2340,7 +2343,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v20</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v21</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
