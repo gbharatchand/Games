@@ -317,11 +317,12 @@ const SAVE_KEY='familycatan-save-v1';
 function saveGame(){
   if(typeof localStorage==='undefined'||!S) return;
   if(S.phase==='gameover'){ clearSave(); return; }
-  if(NET.mode==='online'&&NET.isHost) return; // host room dies with the page
+  // The host saves too: if the host's page dies, the room can be restored
+  // with the same code and every player rejoins (see restoreHostRoom).
   try{
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       v:1, savedAt:Date.now(), S:serializeState(),
-      net:{mode:NET.mode, isHost:!!NET.isHost, myIdx:NET.myIdx, myName:NET.myName, code:NET.code}
+      net:{mode:NET.mode, isHost:!!NET.isHost, myIdx:NET.myIdx, myName:NET.myName, code:NET.code, lobby:NET.lobbyPlayers}
     }));
   }catch(e){}
 }
@@ -381,6 +382,15 @@ function netSend(msg){
 }
 function serializeState(){ return JSON.parse(JSON.stringify(S)); }
 
+/* ---- Host: connection wiring (shared by create + restore) ---- */
+function wireHostPeer(peer){
+  peer.on('connection',conn=>{
+    conn.on('data',data=>hostOnData(conn,data));
+    conn.on('close',()=>hostOnClose(conn));
+    conn.on('open',()=>{ conn._name=null; });
+  });
+}
+
 /* ---- Host: create room ---- */
 function hostRoom(name){
   return new Promise((resolve,reject)=>{
@@ -391,12 +401,54 @@ function hostRoom(name){
     NET.lobbyPlayers=[{name:name, color:PLAYER_COLORS[0].color}];
     peer.on('open',()=>{ setNetStatus('room '+code,'on'); resolve(code); });
     peer.on('error',e=>{ reject(e); });
-    peer.on('connection',conn=>{
-      conn.on('data',data=>hostOnData(conn,data));
-      conn.on('close',()=>hostOnClose(conn));
-      conn.on('open',()=>{ conn._name=null; });
-    });
+    wireHostPeer(peer);
   });
+}
+
+/* ---- Host: restore a room after the host's page died (refresh/crash) ----
+   Same room code, same saved game. Players rejoin by name and pick up
+   exactly where the game left off — a host refresh no longer ends it. */
+function restoreHostRoom(save){
+  S=save.S;
+  NET.mode='online'; NET.isHost=true;
+  NET.myIdx=(save.net&&save.net.myIdx)||0;
+  NET.myName=(save.net&&save.net.myName)||'Player';
+  NET.code=save.net.code;
+  NET.lobbyPlayers=(save.net&&save.net.lobby&&save.net.lobby.length)
+    ? save.net.lobby
+    : S.players.map(p=>({name:p.name, color:p.color}));
+  NET.conns={}; NET.hostConn=null; NET.started=true;
+  S.players.forEach((p,i)=>{ if(i!==NET.myIdx) p.dc=true; }); // until each rejoins
+  BOT.busy=false; BOT.turn=-1; BOT.n=0;
+  shownPrompt=null;
+  setNetStatus('restoring room '+NET.code+'…','off');
+  const attempt=(n)=>{
+    if(typeof Peer==='undefined'){ showMenu(); return; }
+    const peer=new Peer(PEER_PREFIX+NET.code, {debug:0});
+    NET.peer=peer;
+    let opened=false;
+    peer.on('open',()=>{
+      opened=true;
+      wireHostPeer(peer);
+      closeOverlay();
+      setNetStatus('room '+NET.code+' (restored)','on');
+      setHint('Room restored — other players rejoin on its own, or with the room code.');
+      refresh(); renderPrompts();
+      saveGame();
+    });
+    peer.on('error',e=>{
+      if(opened) return;
+      try{ peer.destroy(); }catch(err){}
+      if(e.type==='unavailable-id'&&n<20){
+        // the broker can hold the dead page's registration for a few seconds
+        setNetStatus('restoring room '+NET.code+'…','off');
+        setTimeout(()=>attempt(n+1),4000);
+      }else{
+        showMenu();
+      }
+    });
+  };
+  attempt(0);
 }
 function hostOnData(conn,data){
   if(data.t==='join'||data.t==='rejoin'){
@@ -477,11 +529,47 @@ function guestOnData(data,resolve,reject,code){
   else if(data.t==='state'){ onRemoteState(data.s); }
   else if(data.t==='end'){ showEnded(data.reason); }
 }
+let guestReconnecting=false;
 function guestOnHostClose(){
-  if(NET.mode==='online'&&!NET.isHost){
-    setNetStatus('disconnected','off');
-    showEnded('The host left the game.');
-  }
+  if(NET.mode!=='online'||NET.isHost) return;
+  if(!NET.code||guestReconnecting){ if(!NET.code) showEnded('The host left the game.'); return; }
+  // The host's page died or refreshed — the game is saved on their side and
+  // the room comes back with the same code. Keep retrying the rejoin instead
+  // of ending the game for everyone.
+  guestReconnecting=true;
+  setNetStatus('reconnecting…','off');
+  const code=NET.code, name=NET.myName||'Player';
+  let tries=0, stopped=false;
+  const ov=overlay(`<h2>📡 Connection lost</h2>
+    <p>The host's app closed or refreshed — the game is <b>not</b> over. Reconnecting to room <b>${escapeHtml(code)}</b> automatically…</p>
+    <p id="rcStatus">Reconnecting…</p>
+    <div class="btnrow"><button class="btn" id="rcLeave">Leave game</button></div>`);
+  ov.querySelector('#rcLeave').onclick=()=>{ stopped=true; guestReconnecting=false; clearSave(); location.reload(); };
+  const attempt=async()=>{
+    if(stopped) return;
+    tries++;
+    const st=document.querySelector('#rcStatus'); if(st) st.textContent='Attempt '+tries+' — waiting for the host to restore the room…';
+    try{
+      if(NET.peer){ try{ NET.peer.destroy(); }catch(e){} NET.peer=null; }
+      NET.hostConn=null;
+      await Promise.race([
+        joinRoom(code, name, true),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),12000))
+      ]);
+      stopped=true; guestReconnecting=false;
+      closeOverlay();
+      setNetStatus('room '+code,'on');
+      setHint('Reconnected — game on!');
+    }catch(e){
+      if(tries>=40){
+        guestReconnecting=false;
+        showEnded('Could not reconnect after several minutes. If the host restores the room, use Rejoin from the menu to get back in.');
+        return;
+      }
+      setTimeout(attempt, 5000);
+    }
+  };
+  setTimeout(attempt, 2500);
 }
 function onRemoteState(s){
   const wasPhase=S&&S.phase;
@@ -2347,6 +2435,8 @@ function showMenu(){
       resumeHtml=`<div class="btnrow"><button class="btn green" id="mResume">▶ Resume last game (${save.S.players.length}P)</button></div>`;
     }else if(save.net.mode==='online'&&!save.net.isHost&&save.net.code){
       resumeHtml=`<div class="btnrow"><button class="btn green" id="mRejoin">🔄 Rejoin room ${escapeHtml(save.net.code)}</button></div>`;
+    }else if(save.net.mode==='online'&&save.net.isHost&&save.net.code){
+      resumeHtml=`<div class="btnrow"><button class="btn green" id="mRestore">🌐 Restore room ${escapeHtml(save.net.code)} — you host, players rejoin</button></div>`;
     }
   }
   const ov=overlay(`<div class="menuHero">
@@ -2371,7 +2461,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v27</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v28</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -2401,6 +2491,13 @@ function showMenu(){
       await joinRoom(save.net.code, save.net.myName||'Player', true);
       closeOverlay();
     }catch(e){ err.textContent=e.message; NET.mode=null; setNetStatus('offline','off'); }
+  };
+  const rs=ov.querySelector('#mRestore');
+  if(rs) rs.onclick=()=>{
+    const err=ov.querySelector('#menuErr');
+    err.textContent='Restoring room…';
+    closeOverlay();
+    restoreHostRoom(save);
   };
   ov.querySelector('#mLocal').onclick=()=>{
     closeOverlay();
