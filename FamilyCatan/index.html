@@ -37,7 +37,7 @@
     touch-action: manipulation;
   }
   h1, h2, .btn { font-family: "Baloo 2", -apple-system, 'Segoe UI', sans-serif; }
-  #app { width: 100%; max-width: 1200px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  #app { width: 100%; max-width: none; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
   #main { display: flex; gap: 10px; align-items: stretch; min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
   #boardWrap {
     flex: 1 1 auto; background: rgba(0,0,0,.25); border-radius: 16px; padding: 6px;
@@ -238,6 +238,9 @@
   .pstat .nums { color: #6b5b3e; white-space: nowrap; }
   .pstat .vp { font-weight: 900; white-space: nowrap; }
   .pstat .badge { white-space: nowrap; }
+  .pstat.turn { background: #fdf3cf; outline: 2px solid var(--gold); outline-offset: -1px; }
+  .turnChip { background: var(--gold); color: #5d4a00; font-size: .66rem; font-weight: 900; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+  #turnNow { color: #8a6d1f; font-weight: 800; font-size: .85rem; }
   #dcDeck {
     position: absolute; left: 10px; bottom: 10px; z-index: 6;
     width: 56px; height: 78px; cursor: pointer;
@@ -305,7 +308,7 @@
           <div id="endTurnWrap"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
         </div>
         <div class="pcard"><strong id="resTitle">Resources</strong><div id="gainFx"></div><div id="resBar"></div></div>
-        <div class="pcard"><strong>Players</strong><div id="playerStats"></div></div>
+        <div class="pcard"><strong>Players</strong> <span id="turnNow"></span><div id="playerStats"></div></div>
         <div id="logWrap" style="display:none"><div id="log"></div></div>
       </div>
       <div class="tabpane" id="pane-build">
