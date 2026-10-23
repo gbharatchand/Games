@@ -16,6 +16,18 @@ const TERRAIN = {
   oasis: { color:'#69b96a', res:'gold',  icon:'🌴' },
 };
 const FOG_T = { color:'#93a5b1', icon:'🌫️' }; // hidden tile (Seafarers fog islands)
+// Subtle per-terrain SVG textures drawn over the flat tile colour (2.5D stays)
+const TEX_MAP = { wood:'tex-wood', wheat:'tex-wheat', sheep:'tex-sheep', brick:'tex-brick', ore:'tex-ore', desert:'tex-desert', sea:'tex-sea', gold:'tex-gold', oasis:'tex-oasis' };
+const TEX_DEFS = `
+<pattern id="tex-wood" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M7 27 L13 12 L19 27 Z" fill="rgba(18,58,24,.35)"/><path d="M19 29 L27 9 L35 29 Z" fill="rgba(18,58,24,.25)"/></pattern>
+<pattern id="tex-wheat" width="30" height="30" patternUnits="userSpaceOnUse"><path d="M7 28 V9 M15 28 V5 M23 28 V10" stroke="rgba(122,82,8,.35)" stroke-width="2.4" fill="none"/><circle cx="7" cy="7" r="2" fill="rgba(122,82,8,.35)"/><circle cx="15" cy="4" r="2" fill="rgba(122,82,8,.35)"/><circle cx="23" cy="8" r="2" fill="rgba(122,82,8,.35)"/></pattern>
+<pattern id="tex-sheep" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="9" cy="10" r="3.6" fill="rgba(255,255,255,.50)"/><circle cx="23" cy="22" r="3.6" fill="rgba(255,255,255,.38)"/><circle cx="16" cy="30" r="2.6" fill="rgba(255,255,255,.45)"/></pattern>
+<pattern id="tex-brick" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M0 11 H34 M0 23 H34 M11 0 V11 M23 11 V23 M11 23 V34" stroke="rgba(74,26,10,.30)" stroke-width="2" fill="none"/></pattern>
+<pattern id="tex-ore" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M5 27 L12 12 L19 27 Z M17 29 L26 13 L35 29 Z" fill="rgba(28,32,38,.30)"/></pattern>
+<pattern id="tex-desert" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="8" cy="9" r="1.8" fill="rgba(150,112,48,.45)"/><circle cx="21" cy="19" r="1.8" fill="rgba(150,112,48,.45)"/><circle cx="12" cy="27" r="1.4" fill="rgba(150,112,48,.4)"/></pattern>
+<pattern id="tex-sea" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M1 10 Q7 4 13 10 T25 10" stroke="rgba(255,255,255,.55)" stroke-width="2" fill="none"/><path d="M-3 23 Q3 17 9 23 T21 23 T33 23" stroke="rgba(255,255,255,.4)" stroke-width="2" fill="none"/></pattern>
+<pattern id="tex-gold" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M9 4 V14 M4 9 H14" stroke="rgba(255,255,255,.6)" stroke-width="2.2"/><circle cx="24" cy="23" r="2.1" fill="rgba(255,255,255,.5)"/><path d="M25 15 V21 M22 18 H28" stroke="rgba(255,255,255,.45)" stroke-width="1.8"/></pattern>
+<pattern id="tex-oasis" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M7 27 Q12 12 26 7" stroke="rgba(18,78,30,.40)" stroke-width="2.4" fill="none"/><circle cx="23" cy="24" r="2.4" fill="rgba(255,255,255,.35)"/></pattern>`;
 const COSTS = {
   road:      { brick:1, wood:1 },
   ship:      { wood:1, sheep:1 },
@@ -361,7 +373,10 @@ function portRate(pi,res){
 
 /* ================= Game state ================= */
 let S=null;
-function newGame(playerNames,botFlags,variant,scenario){
+const AVATARS=['🦊','🐼','🦁','🐸','🦉','🐙','🚀','🦄'];
+function validAvatar(a,i){ return AVATARS.includes(a)?a:AVATARS[((i||0)%AVATARS.length+AVATARS.length)%AVATARS.length]; }
+function avOf(p,i){ return (p&&p.avatar)||AVATARS[((i||0)%AVATARS.length+AVATARS.length)%AVATARS.length]; }
+function newGame(playerNames,botFlags,variant,scenario,avatars){
   clearSave();
   lastDeckSize=-1;
   const b=buildBoardData(variant,scenario);
@@ -376,7 +391,7 @@ function newGame(playerNames,botFlags,variant,scenario){
     chitAt:{},
     pirateHex:-1, movingPirate:false, shipMoved:false, goldQueue:[],
     players: playerNames.map((n,i)=>({
-      name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color,
+      name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color, avatar:validAvatar(avatars&&avatars[i],i),
       res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
       longest:0, hasLongest:false, knights:0, hasLargestArmy:false, dc:false,
       chitVP:0, islandsWon:[], homeIsland:null,
@@ -516,7 +531,7 @@ function hostRoom(name){
     const code=makeCode();
     const peer=new Peer(PEER_PREFIX+code, {debug:0});
     NET.peer=peer; NET.code=code; NET.isHost=true; NET.myIdx=0; NET.myName=name;
-    NET.lobbyPlayers=[{name:name, color:PLAYER_COLORS[0].color}];
+    NET.lobbyPlayers=[{name:name, color:PLAYER_COLORS[0].color, avatar:validAvatar(NET.myAvatar,0)}];
     peer.on('open',()=>{ setNetStatus('room '+code,'on'); resolve(code); });
     peer.on('error',e=>{ reject(e); });
     wireHostPeer(peer);
@@ -534,7 +549,7 @@ function restoreHostRoom(save){
   NET.code=save.net.code;
   NET.lobbyPlayers=(save.net&&save.net.lobby&&save.net.lobby.length)
     ? save.net.lobby
-    : S.players.map(p=>({name:p.name, color:p.color}));
+    : S.players.map(p=>({name:p.name, color:p.color, avatar:p.avatar}));
   NET.conns={}; NET.hostConn=null; NET.started=true;
   S.players.forEach((p,i)=>{ if(i!==NET.myIdx) p.dc=true; }); // until each rejoins
   BOT.busy=false; BOT.turn=-1; BOT.n=0;
@@ -586,7 +601,7 @@ function hostOnData(conn,data){
     if(idx>=0){ name=name+' '+(Object.keys(NET.conns).length+1); }
     idx=NET.lobbyPlayers.length;
     if(idx>=4){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
-    NET.lobbyPlayers.push({name:name, color:PLAYER_COLORS[idx].color});
+    NET.lobbyPlayers.push({name:name, color:PLAYER_COLORS[idx].color, avatar:validAvatar(data.avatar,idx)});
     NET.conns[idx]=conn; conn._idx=idx; conn._name=name;
     conn.send({t:'welcome', idx:idx, code:NET.code});
     broadcastLobby();
@@ -624,7 +639,7 @@ function joinRoom(code,name,isRejoin){
     peer.on('open',()=>{
       const conn=peer.connect(PEER_PREFIX+code, {reliable:true});
       NET.hostConn=conn;
-      conn.on('open',()=>{ conn.send({t:isRejoin?'rejoin':'join', name:name}); });
+      conn.on('open',()=>{ conn.send({t:isRejoin?'rejoin':'join', name:name, avatar:NET.myAvatar}); });
       conn.on('data',data=>guestOnData(data,resolve,reject,code));
       conn.on('close',()=>guestOnHostClose());
       conn.on('error',()=>{});
@@ -1080,6 +1095,7 @@ function doRoll(){
   S.dice=[d1,d2];
   const sum=d1+d2;
   animateDice(d1,d2);
+  S.fxKey=(S.fxKey||0)+1; S.fx={key:S.fxKey, hexes:[], gains:{}};
   if(sum===7){ addLog(`🎲 ${cur().name} rolled 7 — robber!`); startRobber(); }
   else{ addLog(`🎲 ${cur().name} rolled ${sum}`); distribute(sum); processGold(); }
 }
@@ -1090,18 +1106,26 @@ function distribute(sum){
     if(h.number!==sum||h.id===S.robberHex||h.fog) return;
     if(h.terrain==='gold'||h.terrain==='oasis'){
       // gold field / oasis: adjacent owners choose that many resources of any kind
+      let anyGold=false;
       for(const k in S.vertices){
         const v=S.vertices[k];
-        if(v.owner>=0&&v.hexes.includes(h.id)) goldDue[v.owner]=(goldDue[v.owner]||0)+(v.kind==='city'?2:1);
+        if(v.owner>=0&&v.hexes.includes(h.id)){ goldDue[v.owner]=(goldDue[v.owner]||0)+(v.kind==='city'?2:1); anyGold=true; }
       }
+      if(anyGold&&S.fx) S.fx.hexes.push(h.id);
       return;
     }
     const res=TERRAIN[h.terrain].res;
     if(!res) return;
+    let anyGain=false;
     for(const k in S.vertices){
       const v=S.vertices[k];
-      if(v.owner>=0&&v.hexes.includes(h.id)) giveRes(S.players[v.owner],res,v.kind==='city'?2:1);
+      if(v.owner>=0&&v.hexes.includes(h.id)){
+        const n=v.kind==='city'?2:1;
+        giveRes(S.players[v.owner],res,n); anyGain=true;
+        if(S.fx){ const g=(S.fx.gains[v.owner]=S.fx.gains[v.owner]||{}); g[res]=(g[res]||0)+n; }
+      }
     }
+    if(anyGain&&S.fx) S.fx.hexes.push(h.id);
   });
   Object.keys(goldDue).forEach(pi=>{ S.goldQueue.push({player:+pi, count:goldDue[pi]}); });
 }
@@ -1491,6 +1515,7 @@ function checkWin(){
   return false;
 }
 function doEndTurn(){
+  S.fx=null;
   S.players[S.turn].dev.forEach(c=>{ c.fresh=false; });
   S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null; S.shipMoved=false;
   addLog(`➡️ ${cur().name}'s turn.`);
@@ -2013,11 +2038,29 @@ function showPassDevice(){
 }
 function showWin(){
   const p=S.players[S.winner];
-  overlay(`<div id="winConfetti">🎉🏆🎉</div>
-    <h2 style="text-align:center">${escapeHtml(p.name)} wins!</h2>
-    <p style="text-align:center">${vp(p)} victory points</p>
-    <div class="btnrow" style="justify-content:center"><button class="btn primary" id="againBtn">🔄 Play Again</button></div>`)
-    .querySelector('#againBtn').onclick=()=>{ closeOverlay(); location.reload(); };
+  const medals=['🥇','🥈','🥉','4️⃣'];
+  const rows=S.players.map((pl,i)=>({pl:pl,i:i})).sort((a,b)=>vp(b.pl)-vp(a.pl)).map((o,k)=>
+    `<div class="pstat"><span>${medals[k]||''}</span><span class="dot" style="background:${o.pl.color}"></span><span class="nm">${avOf(o.pl,o.i)} ${escapeHtml(o.pl.name)}</span><span class="vp">${vp(o.pl)} VP</span></div>`).join('');
+  const ov=overlay(`<div style="font-size:2rem;text-align:center">🎉🏆🎉</div>
+    <h2 style="text-align:center">${avOf(p,S.winner)} ${escapeHtml(p.name)} wins!</h2>
+    <p style="text-align:center">${vp(p)} victory points — final standings:</p>
+    <div>${rows}</div>
+    <div class="btnrow" style="justify-content:center;margin-top:8px"><button class="btn primary" id="againBtn">🔄 Play Again</button></div>`);
+  ov.querySelector('#againBtn').onclick=()=>{ closeOverlay(); location.reload(); };
+  // confetti rain over the win card
+  try{
+    const conf=document.createElement('div'); conf.className='confetti';
+    const cols=['#e74c3c','#3498db','#f39c12','#2ecc71','#ffd94d','#ff7bac'];
+    for(let i=0;i<38;i++){
+      const pc=document.createElement('i');
+      pc.style.left=(Math.random()*100)+'%';
+      pc.style.background=cols[i%cols.length];
+      pc.style.animationDuration=(2.2+Math.random()*1.9)+'s';
+      pc.style.animationDelay=(Math.random()*0.9)+'s';
+      conf.appendChild(pc);
+    }
+    ov.appendChild(conf);
+  }catch(e){}
 }
 function showRules(){
   overlay(`<h2>❓ How to Play (Family Rules)</h2>
@@ -2227,6 +2270,7 @@ function renderBoard(){
   if(!zr){ zr=el('g',{id:'zoomRoot'},svg); }
   zr.innerHTML='';
   const g=el('g',{id:'boardContent'},zr);
+  const defs=el('defs',{},g); defs.innerHTML=TEX_DEFS;
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
@@ -2262,6 +2306,8 @@ function renderBoard(){
     const ptsD=corners.map(p=>p.x.toFixed(1)+','+(p.y+9).toFixed(1)).join(' ');
     el('polygon',{points:ptsD, fill:shade((h.fog?FOG_T:TERRAIN[h.terrain]).color,0.55), stroke:'#0a2a18','stroke-width':2},hg);
     el('polygon',{points:pts, fill:(h.fog?FOG_T:TERRAIN[h.terrain]).color, stroke:'#0f3d22','stroke-width':2},hg);
+    if(!h.fog&&TEX_MAP[h.terrain]) el('polygon',{points:pts, fill:'url(#'+TEX_MAP[h.terrain]+')','pointer-events':'none'},hg);
+    if(S.fx&&S.fx.hexes&&S.fx.hexes.includes(h.id)) el('polygon',{points:pts, fill:'#ffd94d', class:'prodGlow','pointer-events':'none'},hg);
     const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
     t.textContent=(h.fog?FOG_T:TERRAIN[h.terrain]).icon;
     if(h.number!==null&&!h.fog){
@@ -2424,7 +2470,7 @@ function renderPlayerStats(){
     const d=document.createElement('div'); d.className='pstat'+(i===S.turn?' turn':'');
     const badges=(p.hasLongest?'🛣️':'')+(p.hasLargestArmy?'⚔️':'');
     d.innerHTML=`<span class="dot" style="background:${p.color}"></span>`+
-      `<span class="nm">${escHtml(p.name)}</span>`+
+      `<span class="nm">${avOf(p,i)} ${escHtml(p.name)}</span>`+
       (i===S.turn?`<span class="turnChip">▶ TURN</span>`:'')+
       (badges?`<span class="badge">${badges}</span>`:'')+
       `<span class="nums">🂠${totalCards(p)} 🧙${p.dev?p.dev.length:0} ⚔️${p.knights||0} 🛣️${roadCount(i)}</span>`+
@@ -2432,6 +2478,141 @@ function renderPlayerStats(){
     elc.appendChild(d);
   });
 }
+/* ================= Standings strip, coach banner, sounds & FX ================= */
+// Public VP: dev-card VPs stay hidden until the game ends, so the strip
+// never leaks them mid-game.
+function publicVP(p){ let v=vp(p); if(p.dev) v-=p.dev.filter(c=>c.t==='vp').length; return v; }
+function renderStandings(){
+  const strip=$('standStrip'); if(!strip||!S) return;
+  strip.innerHTML='';
+  const pubs=S.players.map(publicVP);
+  const lead=Math.max.apply(null,pubs);
+  S.players.forEach((p,i)=>{
+    const d=document.createElement('div');
+    d.className='standCell'+(i===S.turn&&S.phase!=='gameover'?' turn':'');
+    d.id='stand-'+i;
+    const badges=(p.hasLongest?' 🛣️':'')+(p.hasLargestArmy?' ⚔️':'');
+    d.innerHTML=`<span class="dot" style="background:${p.color}"></span><span class="sAv">${avOf(p,i)}</span>`+
+      `<span class="sNm">${escapeHtml(p.name)}</span>`+
+      ((pubs[i]===lead&&lead>0)?'<span class="crown">👑</span>':'')+
+      `<span class="sVp">${pubs[i]} VP</span><span class="sBad">${badges}</span>`;
+    strip.appendChild(d);
+  });
+}
+// One-line coach: always says what the game is waiting for right now.
+function renderNextHint(){
+  const hEl=$('nextHint'); if(!hEl) return;
+  if(!S){ hEl.textContent=''; return; }
+  const myIdx=NET.mode==='online'?NET.myIdx:S.turn;
+  let t='';
+  if(S.phase==='gameover'){
+    t='🏆 '+(S.players[S.winner]?escapeHtml(S.players[S.winner].name):'')+' wins the game!';
+  }else if(S.phase==='setup'){
+    const p=cur();
+    t=S.setupSub==='settlement'
+      ? `🏠 ${avOf(p,S.turn)} ${escapeHtml(p.name)} — tap a glowing spot to place a settlement`
+      : `🛣️ ${avOf(p,S.turn)} ${escapeHtml(p.name)} — tap a glowing edge for your road`;
+  }else if(S.pending){
+    const pd=S.pending, who=S.players[pd.player!==undefined?pd.player:pd.chooser];
+    const mine=(pd.player!==undefined?pd.player:pd.chooser)===myIdx||NET.mode==='local';
+    if(pd.kind==='discard') t=mine?`🃏 Discard ${pd.must} cards to continue`:`🃏 Waiting for ${escapeHtml(who?who.name:'')} to discard…`;
+    else if(pd.kind==='raider') t=mine?'🎲 Choose: move the robber 🕵️ or the pirate 🏴‍☠️':`🎲 Waiting for ${escapeHtml(who?who.name:'')} to choose robber or pirate…`;
+    else if(pd.kind==='steal') t=mine?'🕵️ Pick a player to steal from':`🕵️ ${escapeHtml(who?who.name:'')} is stealing a card…`;
+    else if(pd.kind==='gold') t=mine?'🪙 Pick your free resources!':`🪙 ${escapeHtml(who?who.name:'')} is picking free resources…`;
+    else if(pd.kind==='plenty') t=mine?'🧙 Year of Plenty — pick 2 free resources!':'🧙 A Year of Plenty is being picked…';
+    else if(pd.kind==='monopoly') t=mine?'🧙 Monopoly — pick a resource to take from everyone!':'🧙 A Monopoly is being played…';
+  }else if(S.mode==='moveRobber'){
+    const p=cur(), raid=S.movingPirate?'pirate':'robber', icon=S.movingPirate?'🏴‍☠️':'🕵️';
+    t=(NET.mode==='online'&&NET.myIdx!==S.turn)?`${icon} Waiting for ${escapeHtml(p.name)} to place the ${raid}…`:`${icon} ${escapeHtml(p.name)} — tap a hex to place the ${raid}!`;
+  }else if(S.offer){
+    t=S.offer.from===myIdx?'🤝 Waiting for the others to answer your offer…':`🤝 ${escapeHtml(S.players[S.offer.from].name)} offers a trade — Accept, Counter or Decline`;
+    if(NET.mode==='local') t=`🤝 ${escapeHtml(S.players[S.offer.from].name)} offers a trade — someone Accept, Counter, or No deal`;
+  }else if(S.phase==='play'){
+    const p=cur();
+    if(isBot(S.turn)) t=`🤖 ${escapeHtml(p.name)} is thinking…`;
+    else if(NET.mode==='online'&&NET.myIdx!==S.turn) t=`⏳ ${avOf(p,S.turn)} ${escapeHtml(p.name)}'s turn…`;
+    else if(!S.rolled) t=`🎲 ${avOf(p,S.turn)} ${escapeHtml(p.name)} — your roll! Tap Roll Dice`;
+    else t=`🔨 ${avOf(p,S.turn)} ${escapeHtml(p.name)} — build, trade, or tap End Turn`;
+  }
+  hEl.textContent=t;
+}
+/* ---- Tiny synthesized sound kit (no audio files) ---- */
+let AC=null, soundOn=true;
+try{ soundOn=localStorage.getItem('familycatan-sound')!=='off'; }catch(e){}
+function setSound(on){
+  soundOn=on;
+  try{ localStorage.setItem('familycatan-sound',on?'on':'off'); }catch(e){}
+  const b=$('soundBtn'); if(b) b.textContent=on?'🔊':'🔇';
+}
+function sfx(name){
+  if(!soundOn) return;
+  try{
+    const Ctx=(typeof window!=='undefined')&&(window.AudioContext||window.webkitAudioContext);
+    if(!Ctx) return;
+    AC=AC||new Ctx();
+    if(AC.state==='suspended') AC.resume();
+    const t=AC.currentTime;
+    const tone=(f,d,type,g,when,slide)=>{
+      const o=AC.createOscillator(), gn=AC.createGain();
+      o.type=type||'sine'; o.frequency.setValueAtTime(f,t+(when||0));
+      if(slide) o.frequency.exponentialRampToValueAtTime(slide,t+(when||0)+d);
+      gn.gain.setValueAtTime(g||.1,t+(when||0));
+      gn.gain.exponentialRampToValueAtTime(.001,t+(when||0)+d);
+      o.connect(gn); gn.connect(AC.destination);
+      o.start(t+(when||0)); o.stop(t+(when||0)+d+.05);
+    };
+    if(name==='roll'){ tone(170,.07,'square',.05,0); tone(130,.07,'square',.05,.06); tone(190,.09,'square',.05,.12); }
+    else if(name==='build'){ tone(150,.16,'triangle',.16,0,85); }
+    else if(name==='ship'){ tone(392,.12,'sine',.11,0); tone(523,.2,'sine',.11,.1); }
+    else if(name==='robber'){ tone(300,.32,'sawtooth',.06,0,65); }
+    else if(name==='offer'){ tone(587,.09,'sine',.09,0); tone(587,.09,'sine',.09,.14); }
+    else if(name==='turn'){ tone(740,.08,'sine',.07,0); tone(988,.1,'sine',.06,.07); }
+    else if(name==='gain'){ tone(880,.07,'sine',.05,0); tone(1174,.09,'sine',.05,.06); }
+    else if(name==='win'){ [523,659,784,1046,1318].forEach((f,i)=>tone(f,.24,'triangle',.11,i*.11)); }
+  }catch(e){}
+}
+// Watch the state and turn changes into sights & sounds for EVERY client:
+// production floaters over the standings strip, dice/robber/build/win audio.
+let fxWatch={};
+function watchFx(){
+  if(!S) return;
+  const w=fxWatch;
+  if(S.fx&&S.fx.key&&S.fx.key!==w.fxKey){
+    w.fxKey=S.fx.key;
+    let any=false;
+    for(const pi in (S.fx.gains||{})){
+      const cell=$('stand-'+pi); if(!cell) continue;
+      for(const r in S.fx.gains[pi]){
+        any=true;
+        const f=document.createElement('div'); f.className='gainFloat';
+        f.textContent=RES_ICON[r]+'+'+S.fx.gains[pi][r];
+        cell.appendChild(f);
+        setTimeout(()=>{ try{ f.remove(); }catch(e){} },2150);
+      }
+    }
+    if(any) sfx('gain');
+  }
+  const diceKey=S.turn+'|'+(S.dice||[]).join(',')+'|'+(S.rolled?1:0);
+  if(w.diceKey!==undefined&&w.diceKey!==diceKey&&S.rolled&&S.phase==='play') sfx('roll');
+  w.diceKey=diceKey;
+  const raidKey=(S.robberHex||0)+'/'+(S.pirateHex||0);
+  if(w.raidKey!==undefined&&w.raidKey!==raidKey&&S.phase==='play') sfx('robber');
+  w.raidKey=raidKey;
+  let pieces=0, ships=0;
+  for(const ek in S.edges){ const e=S.edges[ek]; if(e.owner>=0){ pieces++; if(e.kind==='ship') ships++; } }
+  for(const vk in S.vertices){ if(S.vertices[vk].owner>=0) pieces++; }
+  if(w.pieces!==undefined&&pieces>w.pieces) sfx(ships>(w.ships||0)?'ship':'build');
+  w.pieces=pieces; w.ships=ships;
+  const offerKey=S.offer?(S.offer.from+'|'+JSON.stringify(S.offer.give)+'|'+JSON.stringify(S.offer.want)):null;
+  if(offerKey&&offerKey!==w.offerKey&&S.offer.from!==resViewIdx()) sfx('offer');
+  w.offerKey=offerKey;
+  const mineNow=NET.mode==='online'&&S.phase==='play'&&S.turn===NET.myIdx&&!S.rolled&&!isBot(S.turn);
+  if(mineNow&&!w.wasMine) sfx('turn');
+  w.wasMine=mineNow;
+  if(S.phase==='gameover'){ if(!w.over){ w.over=true; sfx('win'); } }
+  else w.over=false;
+}
+
 let shownRes=null, gainFxTimer=null, gainFxHtml='';
 // Whose hand the side panel shows: online = always mine. Local/solo = the current
 // player when they're human (hotseat), otherwise the device owner's (first human's) —
@@ -2527,6 +2708,7 @@ function setHint(t){ if(typeof document==='undefined') return; const h=$('hint')
 function refresh(){
   if(!S) return;
   renderBoard(); renderRes(); renderDev(); renderLog(); renderOfferBox(); syncDeck(); renderPlayerStats();
+  renderStandings(); renderNextHint(); watchFx();
   const mine=canActAs(S.turn)&&!isBot(S.turn);
   const interactive=S.phase==='play'&&mine;
   $('rollBtn').disabled=!(interactive&&!S.rolled);
@@ -2632,8 +2814,28 @@ function profileBarHtml(){
 /* ================= Menu & lobby ================= */
 let menuVariant='classic';
 let menuScenario='shores';
+let menuAvatar=AVATARS[0];
+try{ const av=localStorage.getItem('familycatan-avatar'); if(AVATARS.includes(av)) menuAvatar=av; }catch(e){}
 try{ const sv=localStorage.getItem('familycatan-scenario'); if(sv&&SEA_SCENARIOS[sv]) menuScenario=sv; }catch(e){}
 try{ menuVariant=localStorage.getItem('familycatan-variant')==='sea'?'sea':'classic'; }catch(e){}
+// Tiny live map preview for a Seafarers scenario (generated once, then cached)
+const scenPreviewCache={};
+function miniMapSvg(k){
+  if(scenPreviewCache[k]!==undefined) return scenPreviewCache[k];
+  let svg='';
+  try{
+    const b=buildBoardData('sea',k);
+    let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+    const polys=b.hexes.map(h=>{
+      const c=hexCenter(h.q,h.r), cs=hexCorners(c.x,c.y);
+      cs.forEach(p=>{ minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+      return `<polygon points="${cs.map(p=>p.x.toFixed(0)+','+p.y.toFixed(0)).join(' ')}" fill="${TERRAIN[h.terrain].color}" stroke="rgba(10,40,24,.35)" stroke-width="1.5"/>`;
+    }).join('');
+    svg=`<svg viewBox="${(minX-4).toFixed(0)} ${(minY-4).toFixed(0)} ${(maxX-minX+8).toFixed(0)} ${(maxY-minY+8).toFixed(0)}"><rect x="${(minX-8).toFixed(0)}" y="${(minY-8).toFixed(0)}" width="${(maxX-minX+16).toFixed(0)}" height="${(maxY-minY+16).toFixed(0)}" fill="#2f6db3"/>${polys}</svg>`;
+  }catch(e){ svg=''; }
+  scenPreviewCache[k]=svg;
+  return svg;
+}
 function showMenu(){
   const save=loadSave();
   let resumeHtml='';
@@ -2659,6 +2861,7 @@ function showMenu(){
     ${profileBarHtml()}
     ${resumeHtml}
     <input type="text" id="menuName" placeholder="Your name" maxlength="12">
+    <div class="tradeRow" style="justify-content:center"><span>Your avatar:</span><button class="btn" id="mAvatar" style="font-size:1.35rem;padding:2px 12px">${menuAvatar}</button><span style="font-size:.78rem;color:#666">tap to change</span></div>
     <div class="btnrow">
       <button class="btn" id="mSolo">🤖 Solo vs CPU</button>
       <button class="btn" id="mLocal">🎮 Same device</button>
@@ -2669,7 +2872,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v33</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v34</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -2681,7 +2884,7 @@ function showMenu(){
       if(sub) sub.textContent='⛵ '+sc.name+': '+sc.desc;
       if(srow){
         srow.style.display='flex';
-        srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>`<button class="btn scenChip${k===menuScenario?' primary':''}" data-sc="${k}" style="margin:2px">${SEA_SCENARIOS[k].icon} ${SEA_SCENARIOS[k].short}</button>`).join('');
+        srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>{ const sc2=SEA_SCENARIOS[k]; return `<button class="btn scenChip scenCard${k===menuScenario?' sel':''}" data-sc="${k}"><span class="scenMap">${miniMapSvg(k)}</span><span class="scenName">${sc2.icon} ${sc2.name}</span><span class="scenMeta">First to ${sc2.winVP} VP · ${sc2.desc}</span></button>`; }).join('');
       }
     }else{
       if(sub) sub.textContent='2–4 players. Build, trade, race to 10 points!';
@@ -2700,6 +2903,12 @@ function showMenu(){
   paintVar();
   const prof=loadProfile();
   if(prof){ const mn=ov.querySelector('#menuName'); if(mn) mn.value=(prof.given||prof.name||'').slice(0,12); }
+  const avBtn=ov.querySelector('#mAvatar');
+  if(avBtn) avBtn.onclick=()=>{
+    menuAvatar=AVATARS[(AVATARS.indexOf(menuAvatar)+1)%AVATARS.length];
+    avBtn.textContent=menuAvatar;
+    try{ localStorage.setItem('familycatan-avatar',menuAvatar); }catch(e){}
+  };
   const gBtn=ov.querySelector('#gBtn');
   if(gBtn&&!renderGoogleInto(gBtn)) setTimeout(()=>{ const b2=document.querySelector('#gBtn'); if(b2) renderGoogleInto(b2); },1500);
   const gOut=ov.querySelector('#gOut');
@@ -2744,7 +2953,7 @@ function showMenu(){
       NET.mode='local'; NET.myIdx=0;
       const names=[nm], bots=[false];
       for(let k=1;k<=bn;k++){ names.push('CPU '+k); bots.push(true); }
-      newGame(names,bots,menuVariant,menuScenario);
+      newGame(names,bots,menuVariant,menuScenario,[menuAvatar]);
       setNetStatus('solo vs CPU','on');
       setHint(`${escapeHtml(nm)}: tap a highlighted spot for your settlement.`);
       refresh();
@@ -2762,6 +2971,7 @@ function showMenu(){
       NET.mode='online';
       NET.variant=menuVariant;
       NET.scenario=menuScenario;
+      NET.myAvatar=menuAvatar;
       const code=await hostRoom(name());
       closeOverlay();
       showLobby(true);
@@ -2774,6 +2984,7 @@ function showMenu(){
     err.textContent='Joining…';
     try{
       NET.mode='online';
+      NET.myAvatar=menuAvatar;
       await joinRoom(code,name());
       closeOverlay();
       showLobby(false);
@@ -2791,12 +3002,19 @@ function showLocalSetup(){
     </div>
     <div id="nameFields"></div>
     <div class="btnrow"><button class="btn primary" id="startGo" style="font-size:1.1rem">▶ Start Game</button></div>`);
+  const avs=[0,1,2,3].map(i=>AVATARS[i%AVATARS.length]);
   const renderNames=()=>{
     const nf=ov.querySelector('#nameFields'); nf.innerHTML='';
     for(let i=0;i<n;i++){
-      nf.innerHTML+=`<div class="pcolor-pick"><span class="dot" style="background:${PLAYER_COLORS[i].color}"></span><input type="text" id="pname${i}" placeholder="Player ${i+1} name" maxlength="12"></div>`;
+      nf.innerHTML+=`<div class="pcolor-pick"><span class="dot" style="background:${PLAYER_COLORS[i].color}"></span><button class="btn avPick" data-av="${i}" title="Avatar">${avs[i]}</button><input type="text" id="pname${i}" placeholder="Player ${i+1} name" maxlength="12"></div>`;
     }
   };
+  ov.querySelector('#nameFields').addEventListener('click',e=>{
+    const b=e.target.closest('.avPick'); if(!b) return;
+    const i=+b.dataset.av;
+    avs[i]=AVATARS[(AVATARS.indexOf(avs[i])+1)%AVATARS.length];
+    b.textContent=avs[i];
+  });
   renderNames();
   const prof2=loadProfile();
   if(prof2){ const f0=ov.querySelector('#pname0'); if(f0) f0.value=(prof2.given||prof2.name||'').slice(0,12); }
@@ -2810,7 +3028,7 @@ function showLocalSetup(){
     const names=[];
     for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
     closeOverlay();
-    newGame(names,undefined,menuVariant,menuScenario);
+    newGame(names,undefined,menuVariant,menuScenario,avs.slice(0,n));
     setNetStatus('same device','on');
     setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
     refresh();
@@ -2832,7 +3050,7 @@ function showLobby(isHost){
     ov.querySelector('#startGameBtn').onclick=()=>{
       if(NET.lobbyPlayers.length<2){ alert('Need at least 2 players to start.'); return; }
       const names=NET.lobbyPlayers.map(p=>p.name);
-      newGame(names,undefined,NET.variant,NET.scenario);
+      newGame(names,undefined,NET.variant,NET.scenario,NET.lobbyPlayers.map(p=>p.avatar));
       NET.started=true; NET.myIdx=0;
       for(const idx in NET.conns){ try{ NET.conns[idx].send({t:'state', s:serializeState()}); }catch(e){} }
       closeLobbyIfOpen();
@@ -2845,7 +3063,7 @@ function renderLobby(){
   const list=document.querySelector('#lobbyList');
   if(!list) return;
   list.innerHTML=NET.lobbyPlayers.map((p,i)=>
-    `<div class="lobbyPlayer"><span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)}${i===0?' (host)':''}</div>`
+    `<div class="lobbyPlayer"><span class="dot" style="background:${p.color}"></span>${validAvatar(p.avatar,i)} ${escapeHtml(p.name)}${i===0?' (host)':''}</div>`
   ).join('');
 }
 function closeLobbyIfOpen(){
@@ -2874,6 +3092,7 @@ function boot(){
   $('dcDeck').onclick=()=>{ if(S&&canActAs(S.turn)&&!isBot(S.turn)&&S.phase==='play') sendOrDo({kind:'buyDev'}); };
   $('restartBtn').onclick=()=>{ if(confirm('Restart the game? Current progress will be lost.')){ clearSave(); location.reload(); } };
   const fitB=$('fitBtn'); if(fitB) fitB.onclick=()=>{ resetZoom(); };
+  const sndB=$('soundBtn'); if(sndB){ sndB.textContent=soundOn?'🔊':'🔇'; sndB.onclick=()=>{ setSound(!soundOn); if(soundOn) sfx('turn'); }; }
   document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   initBoardGestures();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
