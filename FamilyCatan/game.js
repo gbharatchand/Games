@@ -14,6 +14,7 @@ const TERRAIN = {
   sea:   { color:'#a3d2f2', res:null,    icon:'' },
   gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
 };
+const FOG_T = { color:'#93a5b1', icon:'🌫️' }; // hidden tile (Seafarers fog islands)
 const COSTS = {
   road:      { brick:1, wood:1 },
   ship:      { wood:1, sheep:1 },
@@ -88,9 +89,9 @@ function buildBoardData(variant){
   }
   const hexes=[]; let id=0; let ti=0;
   cells.forEach(c=>{
-    if(!c.land){ hexes.push({ id:id, q:c.q, r:c.r, terrain:'sea', number:null, island:-1 }); id++; return; }
+    if(!c.land){ hexes.push({ id:id, q:c.q, r:c.r, terrain:'sea', number:null, island:-1, fog:false }); id++; return; }
     const t=terrains[ti++];
-    hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:numbers.pop(), island:0 });
+    hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:numbers.pop(), island:0, fog:false });
     id++;
   });
   // ---- Islands: flood-fill land hexes by axial edge-adjacency; biggest = main island ----
@@ -124,6 +125,9 @@ function buildBoardData(variant){
       const cands=byIsl[id]; const h=cands[Math.floor(Math.random()*cands.length)];
       if(h) h.terrain='gold';
     });
+    // Fog of discovery: every foreign-island land hex starts hidden. Building a
+    // road, ship or settlement next to one flips it face-up (see revealFog).
+    hexes.forEach(h=>{ if(h.terrain!=='sea'&&h.island!==mainIsland) h.fog=true; });
   }
   const vertices={}, edges={};
   hexes.forEach(h=>{
@@ -503,6 +507,9 @@ function applyAct(idx,a){
         payCost(p,COSTS.city); v.kind='city';
         addLog(`🏘️ ${p.name} built a city.`);
       }else return false;
+      // building a road/ship/settlement reveals any fogged hex it touches
+      if(a.what==='road'||a.what==='ship') revealFog(idx, edgeHexes(S.edges[a.key]).map(h=>h.id));
+      else if(a.what==='settlement') revealFog(idx, S.vertices[a.key].hexes);
       S.mode=S.freeRoads>0?'buildRoad':null;
       updateLongest(); checkWin();
       return true;
@@ -631,7 +638,7 @@ function applyAct(idx,a){
         doMovePirate(a.hex);
         return true;
       }
-      if(a.hex===S.robberHex||S.hexes[a.hex].terrain==='sea') return false; // robber stays on land
+      if(a.hex===S.robberHex||S.hexes[a.hex].terrain==='sea'||S.hexes[a.hex].fog) return false; // robber stays on revealed land
       // only current player moves robber
       doMoveRobber(a.hex);
       return true;
@@ -766,7 +773,7 @@ function distribute(sum){
   if(!S.goldQueue) S.goldQueue=[];
   const goldDue={};
   S.hexes.forEach(h=>{
-    if(h.number!==sum||h.id===S.robberHex) return;
+    if(h.number!==sum||h.id===S.robberHex||h.fog) return;
     if(h.terrain==='gold'){
       // gold field: adjacent owners choose that many resources of any kind
       for(const k in S.vertices){
@@ -789,6 +796,28 @@ function goldAutoPicks(p,count){
   const have={...p.res}; const picks=[];
   for(let i=0;i<count;i++){ let best=RES[0]; for(const r of RES) if(have[r]<have[best]) best=r; picks.push(best); have[best]++; }
   return picks;
+}
+// Fog of discovery: building next to a fogged hex flips it face-up for everyone.
+// The discoverer pockets 1 of the revealed resource (a gold field = a free choice).
+function revealFog(idx, hexIds){
+  if(!S||S.variant!=='sea'||!hexIds) return;
+  if(!S.goldQueue) S.goldQueue=[];
+  let found=false;
+  hexIds.forEach(hid=>{
+    const h=S.hexes[hid];
+    if(!h||!h.fog) return;
+    h.fog=false; found=true;
+    if(h.terrain==='gold'){
+      addLog(`🌫️ ${S.players[idx].name} discovered a gold field! 🪙`);
+      S.goldQueue.push({player:idx, count:1});
+    }else if(TERRAIN[h.terrain].res){
+      addLog(`🌫️ ${S.players[idx].name} discovered ${TERRAIN[h.terrain].icon} ${h.terrain}! +1 ${RES_ICON[TERRAIN[h.terrain].res]}`);
+      giveRes(S.players[idx], TERRAIN[h.terrain].res, 1);
+    }else{
+      addLog(`🌫️ ${S.players[idx].name} discovered a desert 🏜️`);
+    }
+  });
+  if(found) processGold();
 }
 function processGold(){
   if(!S||!S.goldQueue||!S.goldQueue.length){
@@ -929,7 +958,7 @@ function pips(n){ return n<=7?n-1:13-n; }
 function vertexScore(v){
   let s=0; const seen=new Set();
   v.hexes.forEach(hid=>{ const h=S.hexes[hid];
-    if(h.number!=null){ s+=pips(h.number); const r=TERRAIN[h.terrain].res; if(r&&!seen.has(r)){ s+=1.5; seen.add(r); } } });
+    if(h.number!=null&&!h.fog){ s+=pips(h.number); const r=TERRAIN[h.terrain].res; if(r&&!seen.has(r)){ s+=1.5; seen.add(r); } } });
   if(S.ports&&S.ports.some(pt=>pt.vertex===v.key)) s+=4; // port bonus
   return s;
 }
@@ -1854,17 +1883,17 @@ function renderBoard(){
   }
   S.hexes.forEach(h=>{
     const c=hexCenter(h.q,h.r), corners=hexCorners(c.x,c.y);
-    const raiderOk=S.mode==='moveRobber'&&(S.movingPirate?(h.terrain==='sea'&&h.id!==S.pirateHex):(h.terrain!=='sea'&&h.id!==S.robberHex));
+    const raiderOk=S.mode==='moveRobber'&&(S.movingPirate?(h.terrain==='sea'&&h.id!==S.pirateHex):(h.terrain!=='sea'&&!h.fog&&h.id!==S.robberHex));
     const hg=el('g',{class:'hex'+(raiderOk?' robber-ok':'')},g);
     hg.addEventListener('click',()=>uiHexClick(h.id));
     // 2.5D: extruded tile base beneath the top face
     const pts=corners.map(p=>p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
     const ptsD=corners.map(p=>p.x.toFixed(1)+','+(p.y+9).toFixed(1)).join(' ');
-    el('polygon',{points:ptsD, fill:shade(TERRAIN[h.terrain].color,0.55), stroke:'#0a2a18','stroke-width':2},hg);
-    el('polygon',{points:pts, fill:TERRAIN[h.terrain].color, stroke:'#0f3d22','stroke-width':2},hg);
+    el('polygon',{points:ptsD, fill:shade((h.fog?FOG_T:TERRAIN[h.terrain]).color,0.55), stroke:'#0a2a18','stroke-width':2},hg);
+    el('polygon',{points:pts, fill:(h.fog?FOG_T:TERRAIN[h.terrain]).color, stroke:'#0f3d22','stroke-width':2},hg);
     const t=el('text',{x:c.x, y:c.y-14, 'text-anchor':'middle','font-size':'30'},hg);
-    t.textContent=TERRAIN[h.terrain].icon;
-    if(h.number!==null){
+    t.textContent=(h.fog?FOG_T:TERRAIN[h.terrain]).icon;
+    if(h.number!==null&&!h.fog){
       const hot=(h.number===6||h.number===8);
       el('circle',{cx:c.x, cy:c.y+25, r:17, fill:'rgba(0,0,0,.25)'},hg);
       el('circle',{cx:c.x, cy:c.y+22, r:17, fill:'#f7f3e8', stroke:'#555','stroke-width':1.5},hg);
@@ -2253,7 +2282,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v18</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v19</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
