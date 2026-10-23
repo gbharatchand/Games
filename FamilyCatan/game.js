@@ -11,7 +11,7 @@ const TERRAIN = {
   brick: { color:'#b5542d', res:'brick', icon:'🧱' },
   ore:   { color:'#7d8590', res:'ore',   icon:'⛰️' },
   desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
-  sea:   { color:'#3d7dc4', res:null,    icon:'' },
+  sea:   { color:'#f2f7fa', res:null,    icon:'' },
   gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
 };
 const COSTS = {
@@ -62,12 +62,13 @@ function buildBoardData(variant){
   let cells; // [{q,r,land}]
   let terrains, numbers;
   if(seaMode){
-    // Seafarers "Heading for New Shores": a main island + 3 outer islands in a sea frame
+    // Seafarers "Heading for New Shores": a big main island + 4 outer islands in a sea frame
     const LAND=[
-      [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[-2,2],[-1,2],[0,2],[1,2],[-2,3],[-1,3],[0,3], // main island (14)
-      [4,0],[5,0],[4,1],   // island B (3)
-      [5,3],[5,4],        // island D (2)
-      [2,5],[3,5],[3,6],  // island C (3)
+      [0,0],[1,0],[2,0],[-1,1],[0,1],[1,1],[2,1],[-2,2],[-1,2],[0,2],[1,2],[2,2],[-2,3],[-1,3],[0,3],[1,3],[-2,4],[-1,4],[0,4], // main island (19)
+      [4,0],[5,0],[4,1],[5,1],   // island B (4)
+      [4,4],[5,4],[4,5],[5,5],   // island C (4)
+      [1,6],[2,6],[2,7],         // island D (3)
+      [5,-2],[6,-2],             // island E (2)
     ];
     const landSet=new Set(LAND.map(c=>c[0]+','+c[1]));
     const seaSet=new Set();
@@ -75,14 +76,15 @@ function buildBoardData(variant){
     LAND.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=(q+dq)+','+(r+dr); if(!landSet.has(k)) seaSet.add(k); }));
     cells=LAND.map(([q,r])=>({q,r,land:true}));
     [...seaSet].forEach(k=>{ const [q,r]=k.split(',').map(Number); cells.push({q,r,land:false}); });
-    terrains=shuffle(['wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','brick','ore','ore','ore','desert']);
-    numbers=shuffle([2,3,3,3,4,4,5,5,5,6,6,8,8,9,9,9,10,10,11,11,12]);
+    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','desert']);
+    numbers=shuffle([2,3,3,3,4,4,5,5,5,6,6,8,8,9,9,9,10,10,11,11,12,2,3,4,5,6,8,9,10,11,12]);
   }else{
-    const rows=[{r:0,qs:[0,1,2]},{r:1,qs:[-1,0,1,2]},{r:2,qs:[-2,-1,0,1,2]},{r:3,qs:[-2,-1,0,1]},{r:4,qs:[-2,-1,0]}];
+    // Classic, large board: full radius-3 island (37 hexes)
+    const rows=[{r:0,qs:[0,1,2,3]},{r:1,qs:[-1,0,1,2,3]},{r:2,qs:[-2,-1,0,1,2,3]},{r:3,qs:[-3,-2,-1,0,1,2,3]},{r:4,qs:[-3,-2,-1,0,1,2]},{r:5,qs:[-3,-2,-1,0,1]},{r:6,qs:[-3,-2,-1,0]}];
     cells=[];
     rows.forEach(row=>row.qs.forEach(q=>cells.push({q:q, r:row.r, land:true})));
-    terrains=shuffle(['wood','wood','wood','wood','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','brick','brick','brick','ore','ore','ore','desert']);
-    numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12]);
+    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','desert','desert']);
+    numbers=shuffle([2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6,8,8,8,9,9,9,9,10,10,10,10,11,11,11,11,12,12]);
   }
   const hexes=[]; let id=0; let ti=0;
   cells.forEach(c=>{
@@ -157,10 +159,10 @@ function buildBoardData(variant){
   }else{
     const coastal = Object.values(vertices).filter(v=>v.hexes.length<=2)
       .sort((a,b)=>Math.atan2(a.y-boardCx.y,a.x-boardCx.x)-Math.atan2(b.y-boardCx.y,b.x-boardCx.x));
-    const portRes = shuffle(['brick','wood','wheat','ore']);
+    const portRes = shuffle(['brick','wood','wheat','ore','sheep']);
     ports = [];
-    for(let i=0;i<4 && coastal.length;i++){
-      const v = coastal[Math.floor(i*coastal.length/4)%coastal.length];
+    for(let i=0;i<5 && coastal.length;i++){
+      const v = coastal[Math.floor(i*coastal.length/5)%coastal.length];
       if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
     }
   }
