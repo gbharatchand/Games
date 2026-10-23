@@ -228,16 +228,34 @@ function buildBoardData(variant){
       if(!ports.some(p=>p.vertex===v.key)) ports.push({ vertex:v.key, res:portRes[i%portRes.length] });
     }
   }
+  // ---- Generic 3:1 ports at the four corners of the board ----
+  // Own one and the bank trades ANY resource at 3:1 (a matching 2:1 port still wins).
+  const cornerPool = (seaMode
+    ? Object.values(vertices).filter(v=>{ const ts=v.hexes.map(hid=>hexes[hid].terrain); return ts.some(t=>t!=='sea') && ts.some(t=>t==='sea'); })
+    : Object.values(vertices).filter(v=>v.hexes.length<=2));
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sy])=>{
+    let best=null, bestScore=-1e18;
+    for(const v of cornerPool){
+      if(ports.some(p=>p.vertex===v.key)) continue;
+      const dx=v.x-boardCx.x, dy=v.y-boardCx.y;
+      const score=(dx*sx+dy*sy)-Math.abs(dx*sy-dy*sx)*0.35; // far out along the diagonal, close to it
+      if(score>bestScore){ bestScore=score; best=v; }
+    }
+    if(best) ports.push({ vertex:best.key, res:'any' });
+  });
   return { hexes, vertices, edges, robberHex, ports, boardCx, mainIsland };
 }
 function portRate(pi,res){
-  // 2:1 if the player owns a settlement/city on a matching port, else 4:1
+  // 2:1 at a matching port, 3:1 at a generic corner port, else 4:1
   if(!S||!S.ports) return 4;
+  let rate=4;
   for(const pt of S.ports){
     const v=S.vertices[pt.vertex];
-    if(v&&v.owner===pi&&pt.res===res) return 2;
+    if(!v||v.owner!==pi) continue;
+    if(pt.res===res) return 2;
+    if(pt.res==='any') rate=3;
   }
-  return 4;
+  return rate;
 }
 
 /* ================= Game state ================= */
@@ -1668,7 +1686,7 @@ function bankTradeUI(){
   const rates=RES.map(r=>({r:r, rate:portRate(myIdx,r)})).filter(o=>me.res[o.r]>=o.rate);
   if(!rates.length){ setHint('You need enough of one resource to trade with the bank.'); return; }
   const ov=overlay(`<h2>🔄 Bank Trade</h2>
-    <div class="tradeRow"><span>Give:</span><select id="tGive">${rates.map(o=>`<option value="${o.r}">${o.rate}${RES_ICON[o.r]} ${RES_NAME[o.r]} (${me.res[o.r]})${o.rate===2?' ⚓2:1 port':''}</option>`).join('')}</select></div>
+    <div class="tradeRow"><span>Give:</span><select id="tGive">${rates.map(o=>`<option value="${o.r}">${o.rate}${RES_ICON[o.r]} ${RES_NAME[o.r]} (${me.res[o.r]})${o.rate===2?' ⚓2:1 port':o.rate===3?' ⚓3:1 corner port':''}</option>`).join('')}</select></div>
     <div class="tradeRow"><span>Get 1:</span><select id="tGet">${RES.map(r=>`<option value="${r}">${RES_ICON[r]} ${RES_NAME[r]}</option>`).join('')}</select></div>
     <div class="btnrow"><button class="btn primary" id="tGo">Trade</button><button class="btn" id="tCancel">Cancel</button></div>`);
   ov.querySelector('#tCancel').onclick=closeOverlay;
@@ -1718,8 +1736,8 @@ function showRules(){
   <ul class="rulesList">
     <li>🎲 <b>Roll the dice</b> each turn. Hexes showing that number produce resources for adjacent settlements (1 card) and cities (2 cards). The robber blocks its hex.</li>
     <li>🏠 <b>Build:</b> Road = 1🧱 1🪵 · Settlement = 1🧱 1🪵 1🐑 1🌾 · City (upgrade) = 2🌾 3⛰️.</li>
-    <li>🔄 <b>Trade</b> with the bank (4:1 — or 2:1 at ports you own), or make offers to other players.</li>
-    <li>⚓ <b>Ports:</b> coastal spots marked ⚓. Build a settlement there to unlock 2:1 trades for that resource.</li>
+    <li>🔄 <b>Trade</b> with the bank (4:1 — 3:1 at a corner ⚓ port, 2:1 at a matching ⚓ port), or make offers to other players.</li>
+    <li>⚓ <b>Ports:</b> coastal spots marked ⚓. Build a settlement there to unlock 2:1 trades for that resource — corner ❓ ports trade ANY resource at 3:1.</li>
     <li>🕵️ Rolling <b>7</b>: anyone with 8+ cards discards half, then you move the robber and steal 1 card.</li>
     <li>🧙 <b>Dev cards</b> (1🌾 1🐑 1⛰️): Knights move the robber, Victory Points count toward 10, plus Road Building, Year of Plenty, and Monopoly.</li>
     <li>🛣️ <b>Longest road</b> (5+ roads) is worth 2 VP.</li>
@@ -1802,7 +1820,7 @@ function renderPorts(g){
     const at=el('text',{x:bx.toFixed(1),y:(by-2).toFixed(1),'text-anchor':'middle','font-size':'15'},pg);
     at.textContent='⚓';
     const rt=el('text',{x:bx.toFixed(1),y:(by+14).toFixed(1),'text-anchor':'middle','font-size':'11','font-weight':'bold'},pg);
-    rt.textContent=RES_ICON[pt.res]+' 2:1';
+    rt.textContent=pt.res==='any'?'❓ 3:1':RES_ICON[pt.res]+' 2:1';
   });
 }
 /* ---- Board pinch-zoom / pan (stays fully interactive) ---- */
@@ -2353,7 +2371,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v25</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v26</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
