@@ -1731,56 +1731,69 @@ function applyZoom(){
 function resetZoom(){ ZOOM.s=1; ZOOM.tx=0; ZOOM.ty=0; applyZoom(); }
 function initBoardGestures(){
   const wrap=$('boardWrap'); if(!wrap) return;
+  // Pointer events (touch + mouse in one path); #boardWrap has touch-action:none in CSS
+  // so the browser never hijacks a drag as a page scroll.
+  const pts=new Map();
   let pinch0=0, s0=1, tx0=0, ty0=0, cx0=0, cy0=0;
-  let panning=false, moved=false, suppressClick=false, lastTap=0, lastTapX=-999, lastTapY=-999, sx=0, sy=0;
+  let moved=false, suppressClick=false, lastTap=0, lastTapX=-999, lastTapY=-999, sx=0, sy=0;
   const px2units=()=>{ const svg=$('board'); const r=svg.getBoundingClientRect(); const vb=svg.viewBox.baseVal; return vb.width/Math.max(1,r.width); };
-  wrap.addEventListener('touchstart',e=>{
-    if(e.touches.length===2){
-      e.preventDefault();
-      const a=e.touches[0], b=e.touches[1];
-      pinch0=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+  const clampPan=()=>{ const vb=$('board').viewBox.baseVal; const mx=vb.width*0.75, my=vb.height*0.75;
+    ZOOM.tx=Math.max(-mx,Math.min(mx,ZOOM.tx)); ZOOM.ty=Math.max(-my,Math.min(my,ZOOM.ty)); };
+  const two=()=>{ const a=[...pts.values()]; return a.length>=2?a:null; };
+  wrap.addEventListener('pointerdown',e=>{
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(wrap.setPointerCapture){ try{ wrap.setPointerCapture(e.pointerId); }catch(_){} }
+    if(pts.size===2){
+      const a=two(); pinch0=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
       s0=ZOOM.s; tx0=ZOOM.tx; ty0=ZOOM.ty;
-      cx0=(a.clientX+b.clientX)/2; cy0=(a.clientY+b.clientY)/2;
-    }else if(e.touches.length===1){
-      const t=e.touches[0]; sx=t.clientX; sy=t.clientY; moved=false; panning=false;
-    }
-  },{passive:false});
-  wrap.addEventListener('touchmove',e=>{
-    if(e.touches.length===2){
-      e.preventDefault();
-      const a=e.touches[0], b=e.touches[1];
-      const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      cx0=(a[0].x+a[1].x)/2; cy0=(a[0].y+a[1].y)/2;
+    }else if(pts.size===1){ sx=e.clientX; sy=e.clientY; moved=false; }
+  });
+  wrap.addEventListener('pointermove',e=>{
+    if(!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const a=two();
+    if(a){
+      const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
       if(pinch0>0){
         const k=px2units();
         ZOOM.s=Math.min(4,Math.max(1,s0*d/pinch0));
-        const ncx=(a.clientX+b.clientX)/2, ncy=(a.clientY+b.clientY)/2;
+        const ncx=(a[0].x+a[1].x)/2, ncy=(a[0].y+a[1].y)/2;
         ZOOM.tx=tx0+(ncx-cx0)*k; ZOOM.ty=ty0+(ncy-cy0)*k;
-        applyZoom();
+        clampPan(); applyZoom(); moved=true;
       }
-    }else if(e.touches.length===1&&ZOOM.s>1.05){
-      const t=e.touches[0];
-      if(Math.hypot(t.clientX-sx,t.clientY-sy)>12){ panning=true; moved=true; }
-      if(panning){
+    }else if(ZOOM.s>1.05){
+      const dx=e.clientX-sx, dy=e.clientY-sy;
+      if(Math.hypot(dx,dy)>10) moved=true;
+      if(moved){
         e.preventDefault();
         const k=px2units();
-        ZOOM.tx+=(t.clientX-sx)*k; ZOOM.ty+=(t.clientY-sy)*k;
-        sx=t.clientX; sy=t.clientY; applyZoom();
+        ZOOM.tx+=dx*k; ZOOM.ty+=dy*k;
+        sx=e.clientX; sy=e.clientY;
+        clampPan(); applyZoom();
       }
     }
-  },{passive:false});
-  wrap.addEventListener('touchend',e=>{
-    if(e.touches.length===0){
-      const now=Date.now();
-      const t=e.changedTouches&&e.changedTouches[0];
-      const tx=t?t.clientX:-999, ty=t?t.clientY:-999;
-      // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
-      const nearLast=Math.hypot(tx-lastTapX,ty-lastTapY)<48;
-      if(!moved&&nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
-      lastTap=now; lastTapX=tx; lastTapY=ty; panning=false; pinch0=0;
-    }
   });
+  const endPointer=e=>{
+    const wasDrag=moved;
+    pts.delete(e.pointerId);
+    if(pts.size===0){
+      pinch0=0;
+      if(wasDrag){ suppressClick=true; } // eat the click that follows a pan
+      else{
+        const now=Date.now();
+        // zoom reset only on a true double-tap (same spot) — quick taps on different build spots must not eat the second tap
+        const nearLast=Math.hypot(e.clientX-lastTapX,e.clientY-lastTapY)<48;
+        if(nearLast&&now-lastTap<300&&ZOOM.s>1.05){ resetZoom(); suppressClick=true; }
+        lastTap=now; lastTapX=e.clientX; lastTapY=e.clientY;
+      }
+      moved=false;
+    }
+  };
+  wrap.addEventListener('pointerup',endPointer);
+  wrap.addEventListener('pointercancel',endPointer);
   wrap.addEventListener('click',e=>{
-    if(moved||suppressClick){ e.stopPropagation(); e.preventDefault(); moved=false; suppressClick=false; }
+    if(suppressClick){ e.stopPropagation(); e.preventDefault(); suppressClick=false; }
   },true);
   wrap.addEventListener('wheel',e=>{
     e.preventDefault();
@@ -1992,9 +2005,20 @@ function renderPlayerStats(){
   });
 }
 let shownRes=null, gainFxTimer=null, gainFxHtml='';
+// Whose hand the side panel shows: online = always mine. Local/solo = the current
+// player when they're human (hotseat), otherwise the device owner's (first human's) —
+// so a bot's or another player's hand details never leak; others show as card counts only.
+function resViewIdx(){
+  if(!S||!S.players.length) return 0;
+  if(NET.mode==='online') return NET.myIdx;
+  const cp=S.players[S.turn];
+  if(cp&&!cp.isBot) return S.turn;
+  const h=S.players.findIndex(p=>!p.isBot);
+  return h>=0?h:S.turn;
+}
 function renderRes(){
   const bar=$('resBar'); if(!bar||!S) return; bar.innerHTML='';
-  const me=NET.mode==='local'?cur():S.players[NET.myIdx];
+  const me=S.players[resViewIdx()];
   if(!me) return;
   const idx=S.players.indexOf(me);
   if(!shownRes||shownRes.idx!==idx) shownRes={idx:idx, res:{...me.res}};
@@ -2044,7 +2068,7 @@ function scheduleGainFx(gained, idx){
 }
 function renderDev(){
   const hand=$('devHand'); if(!hand||!S) return; hand.innerHTML='';
-  const me=NET.mode==='local'?cur():(S.players[NET.myIdx]||null);
+  const me=S.players[resViewIdx()]||null;
   if(!me||!me.dev) return;
   const showPlay=S.phase==='play'&&!isBot(S.turn)&&(NET.mode==='local'||S.turn===NET.myIdx);
   me.dev.forEach(c=>{
