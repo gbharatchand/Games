@@ -224,6 +224,11 @@
     width: 46px; height: 46px; border-radius: 50%; padding: 0;
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
+  #fitBtn {
+    position: absolute; top: 64px; right: 10px; z-index: 6;
+    width: 46px; height: 46px; border-radius: 50%; padding: 0;
+    font-size: 1.2rem; line-height: 1; opacity: .92;
+  }
   #timerWrap { display: none; }
   #endTurnWrap { flex: 1 1 0; width: auto; margin: 0; border-radius: 14px; min-width: 0; }
   #endTurnWrap.on { padding: 3px; background: conic-gradient(#f6c90e var(--tp,100%), rgba(120,90,20,.28) 0); }
@@ -290,8 +295,9 @@
   <div id="main">
     <div id="boardWrap"><svg id="board" viewBox="0 0 100 100"></svg>
       <div id="rollBadge" style="display:none"></div>
-      <div id="zoomHint">pinch to zoom · double-tap to reset</div>
+      <div id="zoomHint">scroll or pinch to zoom · drag to pan · ⤢ fits the whole board</div>
       <button class="btn" id="restartBtn" title="Restart game">🔄</button>
+      <button class="btn" id="fitBtn" title="Fit whole board">⤢</button>
       <div id="dcDeck" title="Dev card deck — tap to buy">
         <div class="dc-cardback"></div><div class="dc-cardback"></div><div class="dc-cardback"><span>?</span></div>
         <div id="dcDeckCount">25</div>
