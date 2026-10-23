@@ -406,6 +406,7 @@ function vp(p){
   return v;
 }
 function canAfford(p,cost){ return Object.keys(cost).every(r=>p.res[r]>=cost[r]); }
+function missingRes(p,cost){ const m={}; for(const r in cost){ const d=(cost[r]||0)-(p.res[r]||0); if(d>0) m[r]=d; } return m; }
 function payCost(p,cost){ Object.keys(cost).forEach(r=>{ p.res[r]-=cost[r]; }); }
 function giveRes(p,res,n){ p.res[res]+=n; }
 /* ---- Trade-offer bundles: an offer is {from, give:{res:n}, want:{res:n}} ---- */
@@ -712,12 +713,21 @@ function hostApplyAct(idx,a){
 function applyAct(idx,a){
   // returns true if state changed
   const p=S.players[idx];
+  // A rolled 7 must fully resolve before the game can move on: while the
+  // robber/pirate waits to be placed, placing it is the ONLY action allowed;
+  // while a discard / raider-pick / steal choice from the 7 is outstanding,
+  // only that choice may be made.
+  if(S.mode==='moveRobber'&&a.kind!=='moveRobber') return false;
+  if(S.pending&&S.pending.kind==='discard'&&a.kind!=='discard') return false;
+  if(S.pending&&S.pending.kind==='raider'&&a.kind!=='chooseRaider') return false;
+  if(S.pending&&S.pending.kind==='steal'&&a.kind!=='steal') return false;
   switch(a.kind){
     case 'roll':
       if(S.phase!=='play'||S.rolled||S.turn!==idx) return false;
       doRoll(); return true;
     case 'endTurn':
       if(S.phase!=='play'||!S.rolled||S.turn!==idx) return false;
+      if(S.mode==='moveRobber'||S.pending||(S.discardQueue&&S.discardQueue.length)) return false; // a rolled 7 must resolve first
       doEndTurn(); return true;
     case 'setupSettlement':{
       if(S.phase!=='setup'||S.turn!==idx||S.setupSub!=='settlement') return false;
@@ -998,9 +1008,11 @@ function roadValid(e,idx){
   if(S.variant==='sea'&&!edgeBordersLand(e)) return false; // no roads on open water
   const a=S.vertices[e.a], b=S.vertices[e.b];
   if(a.owner===idx||b.owner===idx) return true;
+  // roads extend only from your settlements/cities or your other ROADS —
+  // a road may not sprout off the end of a ship (a settlement must connect them)
   for(const ek in S.edges){
     const o=S.edges[ek];
-    if(o.owner===idx&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+    if(o.owner===idx&&o.kind==='road'&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
   }
   return false;
 }
@@ -1010,9 +1022,12 @@ function shipValid(e,idx){
   if(S.pirateHex!=null&&S.pirateHex>=0&&edgeHexes(e).some(h=>h.id===S.pirateHex)) return false; // pirate blocks this hex
   const a=S.vertices[e.a], b=S.vertices[e.b];
   if(a.owner===idx||b.owner===idx) return true;
+  // ships extend only from your coastal settlements/cities or your other
+  // SHIPS — a ship may not sprout off the end of a road (a settlement must
+  // connect them)
   for(const ek in S.edges){
     const o=S.edges[ek];
-    if(o.owner===idx&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
+    if(o.owner===idx&&o.kind==='ship'&&(o.a===e.a||o.b===e.a||o.a===e.b||o.b===e.b)) return true;
   }
   return false;
 }
@@ -1181,7 +1196,7 @@ function startRaiderMove(){
   }
   const i=S.turn;
   if(isBot(i)){ chooseRaider(botRaiderChoice(i)); }
-  else if(isLocalPlayer(i)){ showRaiderModal(); }
+  else if(isLocalPlayer(i)){ S.pending={kind:'raider', player:i}; showRaiderModal(); }
   else{
     S.pending={kind:'raider', player:i};
     setHint(`🏴‍☠️ Waiting for ${S.players[i].name} to choose robber or pirate…`);
@@ -1563,6 +1578,8 @@ function uiRoll(){
 }
 function uiEndTurn(){
   if(!S||S.phase!=='play'||!S.rolled) return;
+  if(S.mode==='moveRobber'){ setHint(S.movingPirate?'🏴‍☠️ Place the pirate first — tap a sea hex!':'🕵️ Place the robber first — tap a hex!'); return; }
+  if(S.pending||(S.discardQueue&&S.discardQueue.length)){ setHint('⏳ Finish the rolled-7 steps first!'); return; }
   if(!canActAs(S.turn)||isBot(S.turn)) return;
   sendOrDo({kind:'endTurn'});
   if(NET.mode==='local'&&!isBot(S.turn)) showPassDevice();
@@ -1889,20 +1906,24 @@ function renderOfferBox(){
   const give=offerGive(o), want=offerWant(o);
   const d=document.createElement('div'); d.className='offerBanner';
   d.innerHTML=`🤝 <b>${escapeHtml(from.name)}</b> offers ${fmtBundle(give)} for ${fmtBundle(want)}`;
-  const mkBtn=(label,cls,fn)=>{ const b=document.createElement('button'); b.className='btn '+(cls||''); b.style.margin='4px'; b.textContent=label; b.onclick=fn; d.appendChild(b); };
+  const mkBtn=(label,cls,fn,dis)=>{ const b=document.createElement('button'); b.className='btn '+(cls||''); b.style.margin='4px'; b.textContent=label; if(dis){ b.disabled=true; b.style.opacity=.45; } else { b.onclick=fn; } d.appendChild(b); };
   const act=(i,a)=>{ if(NET.mode==='online'&&!NET.isHost&&i===NET.myIdx){ netSend({t:'act', a:a}); } else { hostApplyAct(i,a); } };
   if(NET.mode==='local'){
-    // local: any other player can accept or counter
+    // local: any other player can accept or counter. Accept is ALWAYS shown —
+    // greyed with the shortfall named when the player can't cover the want,
+    // so nobody wonders where the button went.
     S.players.forEach((p,i)=>{
       if(i===o.from) return;
-      if(canAfford(p,want)) mkBtn(`${p.name} accepts`,'green',()=>hostApplyAct(i,{kind:'acceptOffer'}));
+      const okA=canAfford(p,want);
+      mkBtn(okA?`${p.name} accepts`:`${p.name} accepts (need ${fmtBundle(missingRes(p,want))})`,'green',()=>hostApplyAct(i,{kind:'acceptOffer'}),!okA);
       mkBtn(`${p.name} counters`,'',()=>offerTradeUI({asIdx:i, counter:true, give:Object.assign({},want), want:Object.assign({},give)}));
     });
     mkBtn('No deal','',()=>hostApplyAct(o.from,{kind:'declineOffer'}));
   }else{
     const me=S.players[NET.myIdx];
     if(me&&NET.myIdx!==o.from){
-      if(canAfford(me,want)) mkBtn('Accept','green',()=>act(NET.myIdx,{kind:'acceptOffer'}));
+      const okA=canAfford(me,want);
+      mkBtn(okA?'Accept':`Accept (need ${fmtBundle(missingRes(me,want))})`,'green',()=>act(NET.myIdx,{kind:'acceptOffer'}),!okA);
       mkBtn('↩️ Counter','',()=>offerTradeUI({counter:true, give:Object.assign({},want), want:Object.assign({},give)}));
       mkBtn('Decline','',()=>act(NET.myIdx,{kind:'declineOffer'}));
     }else if(me&&NET.myIdx===o.from){
@@ -2505,7 +2526,8 @@ function refresh(){
   $('rollBtn').classList.toggle('turn-glow', interactive&&!S.rolled);
   const playTab=document.querySelector('.tabbtn[data-tab="play"]');
   if(playTab) playTab.classList.toggle('notify', interactive&&!S.rolled&&uiTab!=='play');
-  $('endTurnBtn').disabled=!(interactive&&S.rolled);
+  const blocked7=S.mode==='moveRobber'||!!S.pending||!!(S.discardQueue&&S.discardQueue.length);
+  $('endTurnBtn').disabled=!(interactive&&S.rolled)||blocked7;
   const canBuild=interactive&&S.mode!=='moveRobber';
   $('buildRoad').disabled=!canBuild; $('buildSettle').disabled=!canBuild;
   $('buildCity').disabled=!canBuild; $('bankTradeBtn').disabled=!canBuild;
@@ -2640,7 +2662,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v31</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v32</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
