@@ -87,11 +87,60 @@ function buildBoardData(variant){
     terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','desert','desert']);
     numbers=shuffle([2,2,3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6,8,8,8,9,9,9,9,10,10,10,10,11,11,11,11,12,12]);
   }
-  const hexes=[]; let id=0; let ti=0;
-  cells.forEach(c=>{
+  // ---- Spread placement --------------------------------------------------
+  // A plain shuffle clumps: three wheat in a row, the same number side by side,
+  // 6 next to 8. Instead: shuffle, then hill-climb swaps against an adjacency
+  // cost until resources and numbers come out well spread (best effort, capped).
+  const DIRS6=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+  const landCells=[]; cells.forEach((c,i)=>{ if(c.land) landCells.push(i); });
+  const landPosOf=new Map(landCells.map((ci,k)=>[ci,k]));
+  const cellByKey=new Map(cells.map((c,i)=>[c.q+','+c.r, i]));
+  const landPairs=[];
+  landCells.forEach(ci=>{
+    const c=cells[ci];
+    DIRS6.forEach(([dq,dr])=>{
+      const cj=cellByKey.get((c.q+dq)+','+(c.r+dr));
+      if(cj!==undefined&&cj>ci&&landPosOf.has(cj)) landPairs.push([landPosOf.get(ci), landPosOf.get(cj)]);
+    });
+  });
+  const pipsOf=n=>n==null?0:(n<=7?n-1:13-n);
+  function spread(items, pairs, pairCost){
+    const costOf=a=>pairs.reduce((s,pr)=>s+pairCost(a[pr[0]],a[pr[1]]),0);
+    let best=null, bestCost=Infinity;
+    for(let attempt=0; attempt<6&&bestCost>0; attempt++){
+      const cur=shuffle(items.slice());
+      let curCost=costOf(cur), b=cur.slice(), bc=curCost;
+      for(let iter=0; iter<10000&&bc>0; iter++){
+        const i=Math.floor(Math.random()*cur.length), j=Math.floor(Math.random()*cur.length);
+        if(i===j||cur[i]===cur[j]) continue;
+        const t=cur[i]; cur[i]=cur[j]; cur[j]=t;
+        const c=costOf(cur);
+        if(c<=curCost){ curCost=c; if(c<bc){ b=cur.slice(); bc=c; } }
+        else { const t2=cur[i]; cur[i]=cur[j]; cur[j]=t2; }
+      }
+      if(bc<bestCost){ best=b; bestCost=bc; }
+    }
+    return best;
+  }
+  const tAssign=spread(terrains, landPairs, (a,b)=>a===b?3:0);
+  const numKs=landCells.map((ci,k)=>k).filter(k=>tAssign[k]!=='desert');
+  const nPosOf=new Map(numKs.map((k,n)=>[k,n]));
+  const nPairs=landPairs.filter(pr=>nPosOf.has(pr[0])&&nPosOf.has(pr[1])).map(pr=>[nPosOf.get(pr[0]), nPosOf.get(pr[1])]);
+  const nAssign=spread(numbers, nPairs, (a,b)=>{
+    let c=0;
+    if(a===b) c+=20;                                  // same number side by side
+    if((a===6||a===8)&&(b===6||b===8)) c+=50;        // red numbers never touch
+    if(pipsOf(a)>=4&&pipsOf(b)>=4) c+=1;              // hot numbers not clustered
+    return c;
+  });
+  const tByCell=new Map(), nByCell=new Map();
+  landCells.forEach((ci,k)=>tByCell.set(ci, tAssign[k]));
+  numKs.forEach((k,n)=>nByCell.set(landCells[k], nAssign[n]));
+  const hexes=[]; let id=0;
+  cells.forEach((c,ci)=>{
     if(!c.land){ hexes.push({ id:id, q:c.q, r:c.r, terrain:'sea', number:null, island:-1, fog:false }); id++; return; }
-    const t=terrains[ti++];
-    hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:numbers.pop(), island:0, fog:false });
+    const t=tByCell.get(ci);
+    hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:nByCell.get(ci), island:0, fog:false });
     id++;
   });
   // ---- Islands: flood-fill land hexes by axial edge-adjacency; biggest = main island ----
@@ -112,10 +161,19 @@ function buildBoardData(variant){
       sizes[isl]=size; isl++;
     });
     mainIsland=+Object.keys(sizes).sort((a,b)=>sizes[b]-sizes[a])[0];
-    // the desert (and the robber) belong on the main island — swap if it landed elsewhere
+    // the desert (and the robber) belong on the main island — swap if it landed elsewhere.
+    // Pick the host so the moved number/terrain creates no new clumps (the spread
+    // optimizer ran before this swap, so a blind swap could park a red next to a red).
     const des=hexes.find(h=>h.terrain==='desert');
     if(des&&des.island!==mainIsland){
-      const host=hexes.find(h=>h.island===mainIsland&&h.terrain==='sheep')||hexes.find(h=>h.island===mainIsland&&h.terrain!=='desert');
+      const byK={}; hexes.forEach(h=>byK[h.q+','+h.r]=h);
+      const dnbrs=DIRS.map(([dq,dr])=>byK[(des.q+dq)+','+(des.r+dr)]).filter(n=>n&&n.terrain!=='sea');
+      const badness=host=>{ let bad=0; const n=host.number;
+        dnbrs.forEach(x=>{ if(x.terrain==='sheep') bad+=2; if(n!==null&&x.number===n) bad+=3; if((n===6||n===8)&&(x.number===6||x.number===8)) bad+=6; });
+        return bad; };
+      const cands=hexes.filter(h=>h.island===mainIsland&&h.terrain!=='desert');
+      const host=cands.find(h=>h.terrain==='sheep'&&badness(h)===0)||cands.find(h=>badness(h)===0)
+        ||cands.filter(h=>h.terrain==='sheep').sort((a,b)=>badness(a)-badness(b))[0]||cands[0];
       if(host){ host.terrain='desert'; const n=host.number; host.number=null; des.terrain='sheep'; des.number=n; }
     }
     // Gold fields: one hex on each of two foreign islands becomes gold (pays any resource)
@@ -2282,7 +2340,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v19</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v20</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
