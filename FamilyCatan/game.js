@@ -11,7 +11,7 @@ const TERRAIN = {
   brick: { color:'#b5542d', res:'brick', icon:'🧱' },
   ore:   { color:'#7d8590', res:'ore',   icon:'⛰️' },
   desert:{ color:'#e0cf9e', res:null,    icon:'🏜️' },
-  sea:   { color:'#f2f7fa', res:null,    icon:'' },
+  sea:   { color:'#a3d2f2', res:null,    icon:'' },
   gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
 };
 const COSTS = {
@@ -2253,7 +2253,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v17</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v18</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
