@@ -1754,8 +1754,15 @@ function animateDice(d1,d2){
   },150);
 }
 let shownPrompt=null;
+let winShownKey=null;
 function renderPrompts(){
   if(!S) return;
+  // Victory: checkWin() ends the game, and every client (host + guests)
+  // funnels through here on each state update — raise the win screen once.
+  if(S.phase==='gameover'&&S.winner!=null){
+    if(winShownKey!=='win'+S.winner){ winShownKey='win'+S.winner; showWin(); }
+    return;
+  }
   const key=S.pending?('p'+S.pending.kind+S.pending.player+S.pending.chooser):(S.offer?('o'+S.offer.from):null);
   // offer banner (non-modal)
   renderOfferBox();
@@ -2662,7 +2669,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v32</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v33</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
