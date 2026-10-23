@@ -111,8 +111,8 @@
   .btn.turn-glow { animation: turnGlow 1.6s ease-in-out infinite; }
   .btn:disabled { opacity: .45; cursor: default; transform: none; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
-  #diceArea { display: flex; align-items: center; gap: 12px; }
-  #rollBtn { font-size: 1.12rem; padding: 0 10px; width: 48%; height: 57px; margin: 0 auto; display: block; }
+  #diceArea { display: flex; align-items: stretch; gap: 8px; }
+  #rollBtn { font-size: 1.08rem; padding: 0 6px; flex: 1 1 0; width: auto; height: 56px; margin: 0; display: block; }
   #rollBadge.rolling { animation: shake .3s ease infinite; }
   @keyframes shake {
     0%,100% { transform: rotate(0); } 25% { transform: rotate(-18deg) scale(1.15); }
@@ -216,9 +216,10 @@
     font-size: 1.25rem; line-height: 1; opacity: .92;
   }
   #timerWrap { display: none; }
-  #endTurnWrap { flex: none; width: 48%; margin: 0 auto; border-radius: 14px; min-width: 0; }
+  #endTurnWrap { flex: 1 1 0; width: auto; margin: 0; border-radius: 14px; min-width: 0; }
   #endTurnWrap.on { padding: 3px; background: conic-gradient(#f6c90e var(--tp,100%), rgba(120,90,20,.28) 0); }
-  #endTurnWrap .btn { width: 100%; height: 54px; font-size: 1.02rem; padding: 0 8px; }
+  #endTurnWrap .btn { width: 100%; height: 56px; font-size: 1.02rem; padding: 0 8px; }
+  #endTurnWrap.on .btn { height: 50px; }
   #playerStats { display: flex; flex-direction: column; gap: 6px; }
   .pstat {
     display: flex; align-items: center; gap: 7px;
@@ -294,9 +295,9 @@
       <div class="tabpane active" id="pane-play">
         <div id="diceArea">
           <button class="btn primary" id="rollBtn" disabled>🎲 Roll Dice</button>
+          <div id="endTurnWrap"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div>
         </div>
         <div class="pcard"><strong id="resTitle">Resources</strong><div id="gainFx"></div><div id="resBar"></div></div>
-        <div class="btnrow"><div id="endTurnWrap"><button class="btn green" id="endTurnBtn" disabled>✅ End Turn</button></div></div>
         <div class="pcard"><strong>Players</strong><div id="playerStats"></div></div>
         <div id="logWrap" style="display:none"><div id="log"></div></div>
       </div>
