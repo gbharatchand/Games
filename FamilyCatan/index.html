@@ -313,6 +313,12 @@
   .scenCard .scenName { font-weight: 800; font-size: .88rem; }
   .scenCard .scenMeta { font-size: .7rem; opacity: .78; font-weight: 600; white-space: normal; }
   .avPick { font-size: 1.15rem; padding: 2px 9px; }
+  /* v36: panel items must never flex-compress — the coach banner was being
+     squashed to one line and its wrapped text spilled over the dice buttons,
+     and player rows bled past the panel edge. The panel scrolls instead. */
+  #standStrip, #nextHint, #offerBox, #diceArea, .pcard { flex: none; }
+  .pcard { min-width: 0; }
+  .pstat { flex-wrap: wrap; }
 </style>
 </head>
 <body>
