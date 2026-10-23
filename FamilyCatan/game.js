@@ -2544,13 +2544,27 @@ function setSound(on){
   try{ localStorage.setItem('familycatan-sound',on?'on':'off'); }catch(e){}
   const b=$('soundBtn'); if(b) b.textContent=on?'🔊':'🔇';
 }
-function sfx(name){
-  if(!soundOn) return;
+// iOS keeps the AudioContext suspended until a REAL tap creates/resumes it —
+// and most game sounds are triggered by state updates (network, timers), not
+// taps. So unlock on every genuine gesture, before any sound is needed.
+function unlockAudio(){
   try{
     const Ctx=(typeof window!=='undefined')&&(window.AudioContext||window.webkitAudioContext);
     if(!Ctx) return;
-    AC=AC||new Ctx();
+    if(!AC) AC=new Ctx();
     if(AC.state==='suspended') AC.resume();
+  }catch(e){}
+}
+try{
+  if(typeof document!=='undefined'&&document.addEventListener){
+    ['pointerdown','touchend','click'].forEach(ev=>document.addEventListener(ev,unlockAudio,true));
+  }
+}catch(e){}
+function sfx(name){
+  if(!soundOn) return;
+  try{
+    unlockAudio();
+    if(!AC) return;
     const t=AC.currentTime;
     const tone=(f,d,type,g,when,slide)=>{
       const o=AC.createOscillator(), gn=AC.createGain();
@@ -2872,7 +2886,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v34</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v35</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
