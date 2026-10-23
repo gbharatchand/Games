@@ -3,7 +3,7 @@
    game itself loads and plays offline (same-device mode).
    Strategy: network-first for the app shell (index.html) so updates
    always arrive; cache-first for other same-origin assets. */
-const CACHE = 'familycatan-v13';
+const CACHE = 'familycatan-v14';
 const CORE = ['./index.html', './game.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
