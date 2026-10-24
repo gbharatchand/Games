@@ -2,7 +2,7 @@
 /* ================= Constants & geometry (tested) ================= */
 const HEX_SIZE = 60;
 const RES = ['wood','brick','sheep','wheat','ore'];
-const RES_ICON = { wood:'🪵', brick:'🧱', sheep:'🐑', wheat:'🌾', ore:'⛰️' };
+const RES_ICON = { wood:'🪵', brick:'🧱', sheep:'🐑', wheat:'🌾', ore:'⛰️', camel:'🐫', silk:'🧵' };
 const RES_NAME = { wood:'Wood', brick:'Brick', sheep:'Sheep', wheat:'Wheat', ore:'Ore' };
 const TERRAIN = {
   wood:  { color:'#3a8a4a', res:'wood',  icon:'🌲' },
@@ -14,6 +14,8 @@ const TERRAIN = {
   sea:   { color:'#a3d2f2', res:null,    icon:'' },
   gold:  { color:'#e8b93c', res:'gold',  icon:'🪙' },
   oasis: { color:'#69b96a', res:'gold',  icon:'🌴' },
+  caravan:{ color:'#d9a066', res:'camel', icon:'🐫' },
+  silkfarm:{ color:'#c77db8', res:'silk', icon:'🧵' },
 };
 const FOG_T = { color:'#93a5b1', icon:'🌫️' }; // hidden tile (Seafarers fog islands)
 // Subtle per-terrain SVG textures drawn over the flat tile colour (2.5D stays)
@@ -93,7 +95,7 @@ function seaKit(nLand,nDesert){
   return { terrains, numbers };
 }
 
-function buildBoardData(variant, scenario){
+function buildBoardData(variant, scenario, board){
   const seaMode = variant==='sea';
   const scen = seaMode ? (SEA_SCENARIOS[scenario]||SEA_SCENARIOS.shores) : null;
   const scenId = seaMode ? (SEA_SCENARIOS[scenario]?scenario:'shores') : null;
@@ -225,6 +227,15 @@ function buildBoardData(variant, scenario){
     hexes.push({ id:id, q:c.q, r:c.r, terrain:t, number: t==='desert'?null:nByCell.get(ci), island:0, fog:false });
     id++;
   });
+  // ---- Classic Silk Road board: two caravan camps + two silk workshops ----
+  // They keep the number tokens of the hexes they replace, so they produce
+  // 🐫 camels and 🧵 silk exactly like normal terrains produce resources.
+  if(!seaMode&&board==='silk'){
+    const pick=t=>hexes.find(h=>h.terrain===t);
+    const c1=pick('wood'), c2=pick('sheep'), s1=pick('wheat'), s2=pick('brick');
+    if(c1) c1.terrain='caravan'; if(c2) c2.terrain='caravan';
+    if(s1) s1.terrain='silkfarm'; if(s2) s2.terrain='silkfarm';
+  }
   // ---- Islands: flood-fill land hexes by axial edge-adjacency; biggest = main island ----
   let mainIsland=0;
   if(seaMode){
@@ -376,23 +387,24 @@ let S=null;
 const AVATARS=['🦊','🐼','🦁','🐸','🦉','🐙','🚀','🦄'];
 function validAvatar(a,i){ return AVATARS.includes(a)?a:AVATARS[((i||0)%AVATARS.length+AVATARS.length)%AVATARS.length]; }
 function avOf(p,i){ return (p&&p.avatar)||AVATARS[((i||0)%AVATARS.length+AVATARS.length)%AVATARS.length]; }
-function newGame(playerNames,botFlags,variant,scenario,avatars){
+function newGame(playerNames,botFlags,variant,scenario,avatars,board){
   clearSave();
   lastDeckSize=-1;
-  const b=buildBoardData(variant,scenario);
+  const b=buildBoardData(variant,scenario,board);
   S={
     gid: Date.now()+'-'+Math.floor(Math.random()*1e9),
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
     ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
     variant: variant==='sea'?'sea':'classic',
     scenario: variant==='sea'?(SEA_SCENARIOS[scenario]?scenario:'shores'):null,
+    board: variant==='sea'?null:(board==='silk'?'silk':'standard'),
     mainIsland: b.mainIsland||0,
     winVP: variant==='sea'?(SEA_SCENARIOS[scenario]||SEA_SCENARIOS.shores).winVP:10,
     chitAt:{},
-    pirateHex:-1, movingPirate:false, shipMoved:false, goldQueue:[],
+    pirateHex:-1, movingPirate:false, shipMoved:false, camelFree:false, goldQueue:[],
     players: playerNames.map((n,i)=>({
       name:n||('Player '+(i+1)), color:PLAYER_COLORS[i].color, avatar:validAvatar(avatars&&avatars[i],i),
-      res:{wood:0,brick:0,sheep:0,wheat:0,ore:0}, dev:[],
+      res:{wood:0,brick:0,sheep:0,wheat:0,ore:0,camel:0,silk:0}, dev:[],
       longest:0, hasLongest:false, knights:0, hasLargestArmy:false, dc:false,
       chitVP:0, islandsWon:[], homeIsland:null,
     })),
@@ -784,12 +796,13 @@ function applyAct(idx,a){
       if(a.what==='road'){
         const e=S.edges[a.key];
         const free=S.freeRoads>0;
+        const camelFree=S.camelFree;
         if(!e||e.owner!==-1) return false;
-        if(!free&&!canAfford(p,COSTS.road)) return false;
+        if(!free&&!camelFree&&!canAfford(p,COSTS.road)) return false;
         if(!roadValid(e,idx)) return false;
-        if(free) S.freeRoads--; else payCost(p,COSTS.road);
+        if(free) S.freeRoads--; else if(camelFree) S.camelFree=false; else payCost(p,COSTS.road);
         e.owner=idx; e.kind='road';
-        addLog(`🛣️ ${p.name} built a road${free?' (Road Building)':''}.`);
+        addLog(`🛣️ ${p.name} built a road${free?' (Road Building)':(camelFree?' (🐫 caravan)':'')}.`);
       }else if(a.what==='ship'){
         const e=S.edges[a.key];
         if(!e||e.owner!==-1) return false;
@@ -870,6 +883,22 @@ function applyAct(idx,a){
       if(!S.offer) return false;
       addLog(`🤝 ${S.players[S.offer.from].name}'s offer was declined.`);
       S.offer=null; return true;
+    }
+    // Silk Road board: spend 1 🐫 for a free road (credit used on your next road)
+    case 'useCamel':{
+      if(S.phase!=='play'||S.turn!==idx||S.board!=='silk'||S.camelFree) return false;
+      if((p.res.camel||0)<1) return false;
+      p.res.camel--; S.camelFree=true;
+      addLog(`🐫 ${p.name} sent out a caravan — next road is free!`);
+      return true;
+    }
+    // Silk Road board: trade 2 🧵 for any 1 resource of your choice
+    case 'tradeSilk':{
+      if(S.phase!=='play'||S.turn!==idx||S.board!=='silk'||!RES.includes(a.get)) return false;
+      if((p.res.silk||0)<2) return false;
+      p.res.silk-=2; p.res[a.get]++;
+      addLog(`🧵 ${p.name} traded 2 silk for 1${RES_ICON[a.get]}.`);
+      return true;
     }
     case 'buyDev':{
       if(S.phase!=='play'||S.turn!==idx) return false;
@@ -1394,6 +1423,15 @@ function botBankTrade(i){
 }
 function botTryBuild(i){
   const p=S.players[i];
+  // Silk Road board: bots spend silk for their scarcest resource, and camels on free roads
+  if(S.board==='silk'&&(p.res.silk||0)>=2){
+    let best=RES[0]; for(const r of RES) if(p.res[r]<p.res[best]) best=r;
+    hostApplyAct(i,{kind:'tradeSilk', get:best}); return true;
+  }
+  if(S.board==='silk'&&(p.res.camel||0)>0){
+    const ek=bestRoadEdge(i);
+    if(ek){ hostApplyAct(i,{kind:'useCamel'}); hostApplyAct(i,{kind:'place',what:'road',key:ek}); return true; }
+  }
   if(canAfford(p,COSTS.city)){
     for(const k in S.vertices){ const v=S.vertices[k];
       if(v.owner===i&&v.kind==='settlement'){ hostApplyAct(i,{kind:'place',what:'city',key:k}); return true; } }
@@ -1533,7 +1571,7 @@ function checkWin(){
 function doEndTurn(){
   S.fx=null;
   S.players[S.turn].dev.forEach(c=>{ c.fresh=false; });
-  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null; S.shipMoved=false;
+  S.turn=(S.turn+1)%S.players.length; S.rolled=false; S.mode=null; S.shipMoved=false; S.camelFree=false;
   addLog(`➡️ ${cur().name}'s turn.`);
 }
 
@@ -1713,7 +1751,7 @@ function onPlaceTap(what,key){
   if(!S||S.phase!=='play'||S.pending) return;
   if(!canActAs(S.turn)||isBot(S.turn)) return;
   const costsMap={road:COSTS.road, ship:COSTS.ship, settlement:COSTS.settlement, city:COSTS.city};
-  if(costsMap[what]&&!(what==='road'&&S.freeRoads>0)){
+  if(costsMap[what]&&!(what==='road'&&(S.freeRoads>0||S.camelFree))){
     const idx=NET.mode==='local'?S.turn:NET.myIdx;
     if(!canAfford(S.players[idx],costsMap[what])){ affordHint(what); return; }
   }
@@ -2367,7 +2405,7 @@ function renderBoard(){
   const em0=effMode();
   // During play, spots you can afford glow automatically — tap one to build (no Build button needed).
   const playOK=canPlace&&S.phase==='play'&&!S.pending&&S.mode!=='moveRobber';
-  const showRoads=canPlace&&(S.mode==='setupRoad'||(playOK&&(em0==='buildRoad'||S.freeRoads>0||canAfford(S.players[S.turn],COSTS.road))));
+  const showRoads=canPlace&&(S.mode==='setupRoad'||(playOK&&(em0==='buildRoad'||S.freeRoads>0||S.camelFree||canAfford(S.players[S.turn],COSTS.road))));
   if(showRoads){
     for(const ek in S.edges){
       const e=S.edges[ek];
@@ -2490,7 +2528,7 @@ function renderPlayerStats(){
       `<span class="nm">${avOf(p,i)} ${escHtml(p.name)}</span>`+
       (i===S.turn?`<span class="turnChip">▶ TURN</span>`:'')+
       (badges?`<span class="badge">${badges}</span>`:'')+
-      `<span class="nums">🂠${totalCards(p)} 🧙${p.dev?p.dev.length:0} ⚔️${p.knights||0} 🛣️${roadCount(i)}</span>`+
+      `<span class="nums">🂠${totalCards(p)} 🧙${p.dev?p.dev.length:0} ⚔️${p.knights||0} 🛣️${roadCount(i)}${S.board==='silk'?` 🐫${p.res.camel||0} 🧵${p.res.silk||0}`:''}</span>`+
       `<span class="vp">${vp(p)} VP</span>`;
     elc.appendChild(d);
   });
@@ -2522,7 +2560,9 @@ function renderNextHint(){
   if(!S){ hEl.textContent=''; return; }
   const myIdx=NET.mode==='online'?NET.myIdx:S.turn;
   let t='';
-  if(S.phase==='gameover'){
+  if(S.camelFree&&S.phase==='play'&&S.turn===myIdx){
+    t='🐫 Caravan credit ready — tap a glowing road spot for a FREE road!';
+  }else if(S.phase==='gameover'){
     t='🏆 '+(S.players[S.winner]?escapeHtml(S.players[S.winner].name):'')+' wins the game!';
   }else if(S.phase==='setup'){
     const p=cur();
@@ -2673,6 +2713,25 @@ function renderRes(){
     d.innerHTML=`${RES_ICON[r]} ${shownRes.res[r]}<small>${RES_NAME[r]}</small>`;
     bar.appendChild(d);
   });
+  // Silk Road board: caravan goods — camels buy a free road, silk trades 2:1 for anything
+  if(S.board==='silk'){
+    const myTurn=idx===S.turn;
+    const dc=document.createElement('div'); dc.className='res'; dc.id='res-camel';
+    dc.innerHTML=`🐫 ${me.res.camel||0}<small>Camel</small>`;
+    const ub=document.createElement('button'); ub.className='btn'; ub.style.marginTop='4px'; ub.textContent='Free road';
+    ub.disabled=!(myTurn&&S.phase==='play'&&S.rolled&&!S.pending&&!S.camelFree&&(me.res.camel||0)>=1);
+    ub.onclick=()=>sendOrDo({kind:'useCamel'});
+    dc.appendChild(ub); bar.appendChild(dc);
+    const ds=document.createElement('div'); ds.className='res'; ds.id='res-silk';
+    ds.innerHTML=`🧵 ${me.res.silk||0}<small>Silk</small>`;
+    RES.forEach(r=>{
+      const b=document.createElement('button'); b.className='btn'; b.style.marginTop='2px'; b.textContent='→'+RES_ICON[r];
+      b.disabled=!(myTurn&&S.phase==='play'&&S.rolled&&!S.pending&&(me.res.silk||0)>=2);
+      b.onclick=()=>sendOrDo({kind:'tradeSilk', get:r});
+      ds.appendChild(b);
+    });
+    bar.appendChild(ds);
+  }
   if(anyGain) scheduleGainFx(gained, idx);
 }
 function scheduleGainFx(gained, idx){
@@ -2756,7 +2815,7 @@ function refresh(){
   // dim buttons the player can't afford (still tappable; applyAct validates)
   const meRes=(NET.mode==='local'?cur():(S.players[NET.myIdx]||{res:{}})).res||{};
   const afford=c=>Object.keys(c).every(r=>(meRes[r]||0)>=c[r]);
-  $('buildRoad').classList.toggle('cant',canBuild&&!afford(COSTS.road));
+  $('buildRoad').classList.toggle('cant',canBuild&&!afford(COSTS.road)&&!S.camelFree);
   const shipBtn=$('buildShip');
   if(shipBtn){
     const sea=S.variant==='sea';
@@ -2845,10 +2904,12 @@ function profileBarHtml(){
 /* ================= Menu & lobby ================= */
 let menuVariant='classic';
 let menuScenario='shores';
+let menuBoard='standard';
 let menuAvatar=AVATARS[0];
 try{ const av=localStorage.getItem('familycatan-avatar'); if(AVATARS.includes(av)) menuAvatar=av; }catch(e){}
 try{ const sv=localStorage.getItem('familycatan-scenario'); if(sv&&SEA_SCENARIOS[sv]) menuScenario=sv; }catch(e){}
 try{ menuVariant=localStorage.getItem('familycatan-variant')==='sea'?'sea':'classic'; }catch(e){}
+try{ menuBoard=localStorage.getItem('familycatan-board')==='silk'?'silk':'standard'; }catch(e){}
 // Tiny live map preview for a Seafarers scenario (generated once, then cached)
 const scenPreviewCache={};
 function miniMapSvg(k){
@@ -2888,6 +2949,10 @@ function showMenu(){
       <button class="btn" id="mVarC">🏝️ Classic</button>
       <button class="btn" id="mVarS">⛵ Seafarers</button>
     </div>
+    <div class="btnrow" id="mBoardRow">
+      <button class="btn" id="mBoardStd">🏝️ Standard board</button>
+      <button class="btn" id="mBoardSilk">🐫 Silk Road board</button>
+    </div>
     <div class="btnrow" id="mScenRow" style="flex-wrap:wrap;justify-content:center"></div>
     ${profileBarHtml()}
     ${resumeHtml}
@@ -2903,13 +2968,19 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v37</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v38</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
     ov.querySelector('#mVarS').classList.toggle('primary', menuVariant==='sea');
     const sub=ov.querySelector('#menuSub');
     const srow=ov.querySelector('#mScenRow');
+    const brow=ov.querySelector('#mBoardRow');
+    if(brow){
+      brow.style.display=menuVariant==='classic'?'flex':'none';
+      ov.querySelector('#mBoardStd').classList.toggle('primary', menuBoard==='standard');
+      ov.querySelector('#mBoardSilk').classList.toggle('primary', menuBoard==='silk');
+    }
     if(menuVariant==='sea'){
       const sc=SEA_SCENARIOS[menuScenario];
       if(sub) sub.textContent='⛵ '+sc.name+': '+sc.desc;
@@ -2918,7 +2989,7 @@ function showMenu(){
         srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>{ const sc2=SEA_SCENARIOS[k]; return `<button class="btn scenChip scenCard${k===menuScenario?' sel':''}" data-sc="${k}"><span class="scenMap">${miniMapSvg(k)}</span><span class="scenName">${sc2.icon} ${sc2.name}</span><span class="scenMeta">First to ${sc2.winVP} VP · ${sc2.desc}</span></button>`; }).join('');
       }
     }else{
-      if(sub) sub.textContent='2–4 players. Build, trade, race to 10 points!';
+      if(sub) sub.textContent=menuBoard==='silk'?'🐫 Silk Road board: caravan camps pay 🐫 camels, silk workshops pay 🧵 silk — first to 10 points!':'2–4 players. Build, trade, race to 10 points!';
       if(srow) srow.style.display='none';
     }
   };
@@ -2931,6 +3002,8 @@ function showMenu(){
   });
   ov.querySelector('#mVarC').onclick=()=>{ menuVariant='classic'; try{ localStorage.setItem('familycatan-variant','classic'); }catch(e){} paintVar(); };
   ov.querySelector('#mVarS').onclick=()=>{ menuVariant='sea'; try{ localStorage.setItem('familycatan-variant','sea'); }catch(e){} paintVar(); };
+  ov.querySelector('#mBoardStd').onclick=()=>{ menuBoard='standard'; try{ localStorage.setItem('familycatan-board','standard'); }catch(e){} paintVar(); };
+  ov.querySelector('#mBoardSilk').onclick=()=>{ menuBoard='silk'; try{ localStorage.setItem('familycatan-board','silk'); }catch(e){} paintVar(); };
   paintVar();
   const prof=loadProfile();
   if(prof){ const mn=ov.querySelector('#menuName'); if(mn) mn.value=(prof.given||prof.name||'').slice(0,12); }
@@ -2984,7 +3057,7 @@ function showMenu(){
       NET.mode='local'; NET.myIdx=0;
       const names=[nm], bots=[false];
       for(let k=1;k<=bn;k++){ names.push('CPU '+k); bots.push(true); }
-      newGame(names,bots,menuVariant,menuScenario,[menuAvatar]);
+      newGame(names,bots,menuVariant,menuScenario,[menuAvatar],menuBoard);
       setNetStatus('solo vs CPU','on');
       setHint(`${escapeHtml(nm)}: tap a highlighted spot for your settlement.`);
       refresh();
@@ -3002,6 +3075,7 @@ function showMenu(){
       NET.mode='online';
       NET.variant=menuVariant;
       NET.scenario=menuScenario;
+      NET.board=menuBoard;
       NET.myAvatar=menuAvatar;
       const code=await hostRoom(name());
       closeOverlay();
@@ -3059,7 +3133,7 @@ function showLocalSetup(){
     const names=[];
     for(let i=0;i<n;i++){ const v=ov.querySelector('#pname'+i).value.trim(); names.push(v||('Player '+(i+1))); }
     closeOverlay();
-    newGame(names,undefined,menuVariant,menuScenario,avs.slice(0,n));
+    newGame(names,undefined,menuVariant,menuScenario,avs.slice(0,n),menuBoard);
     setNetStatus('same device','on');
     setHint(`${cur().name}: tap a highlighted spot for your settlement.`);
     refresh();
@@ -3071,7 +3145,7 @@ function showLobby(isHost){
   const ov=overlay(`<h2>🌐 ${isHost?'Room created!':'Joined!'}</h2>
     <p>Share this code with family:</p>
     <div class="roomCode">${NET.code}</div>
-    ${isHost?`<p>Mode: <b>${NET.variant==='sea'?('⛵ Seafarers — '+(SEA_SCENARIOS[NET.scenario||'shores'].name)+' (first to '+(SEA_SCENARIOS[NET.scenario||'shores'].winVP)+' VP)'):'🏝️ Classic (first to 10 VP)'}</b></p>`:''}
+    ${isHost?`<p>Mode: <b>${NET.variant==='sea'?('⛵ Seafarers — '+(SEA_SCENARIOS[NET.scenario||'shores'].name)+' (first to '+(SEA_SCENARIOS[NET.scenario||'shores'].winVP)+' VP)'):(NET.board==='silk'?'🏝️ Classic — 🐫 Silk Road board (first to 10 VP)':'🏝️ Classic (first to 10 VP)')}</b></p>`:''}
     <div id="lobbyList"></div>
     ${isHost?'<div class="btnrow"><button class="btn primary" id="startGameBtn">▶ Start Game</button></div>':'<p>Waiting for the host to start…</p>'}
     <p style="font-size:.8rem;color:#666">Everyone opens <b>this same page</b> and joins with the code. No accounts needed.</p>`);
@@ -3081,7 +3155,7 @@ function showLobby(isHost){
     ov.querySelector('#startGameBtn').onclick=()=>{
       if(NET.lobbyPlayers.length<2){ alert('Need at least 2 players to start.'); return; }
       const names=NET.lobbyPlayers.map(p=>p.name);
-      newGame(names,undefined,NET.variant,NET.scenario,NET.lobbyPlayers.map(p=>p.avatar));
+      newGame(names,undefined,NET.variant,NET.scenario,NET.lobbyPlayers.map(p=>p.avatar),NET.board);
       NET.started=true; NET.myIdx=0;
       for(const idx in NET.conns){ try{ NET.conns[idx].send({t:'state', s:serializeState()}); }catch(e){} }
       closeLobbyIfOpen();
