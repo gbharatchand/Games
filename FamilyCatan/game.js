@@ -58,6 +58,8 @@ const PLAYER_COLORS = [
   { name:'White',  color:'#f5f5f5' },
   { name:'Green',  color:'#27ae60' },
   { name:'Purple', color:'#9b59b6' },
+  { name:'Pink',   color:'#ec87bf' },
+  { name:'Teal',   color:'#1abc9c' },
 ];
 const WIN_VP = 10;
 const PEER_PREFIX = 'familycatan-v1-';
@@ -97,8 +99,41 @@ function seaKit(nLand,nDesert){
   return { terrains, numbers };
 }
 
-function buildBoardData(variant, scenario, board){
+// Grow islands for big games (6+ players): +12 land hexes. The largest island
+// gets the growth; on Four Islands (equal islands) every island grows by 3.
+// LAND is a copy of the layout list, never the shared constant.
+function growIslands(LAND, extra){
+  const key=(q,r)=>q+','+r;
+  const set=new Set(LAND.map(c=>key(c[0],c[1])));
+  const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+  const comps=[], seen=new Set();
+  LAND.forEach(([q,r])=>{
+    if(seen.has(key(q,r))) return;
+    const comp=[], stack=[[q,r]]; seen.add(key(q,r));
+    while(stack.length){ const [cq,cr]=stack.pop(); comp.push([cq,cr]);
+      DIRS.forEach(([dq,dr])=>{ const k=key(cq+dq,cr+dr); if(set.has(k)&&!seen.has(k)){ seen.add(k); stack.push([cq+dq,cr+dr]); } }); }
+    comps.push(comp);
+  });
+  const biggest=Math.max(...comps.map(c=>c.length));
+  const targets=comps.filter(c=>c.length===biggest);
+  const per=Math.floor(extra/targets.length);
+  targets.forEach(comp=>{
+    const cset=new Set(comp.map(c=>key(c[0],c[1])));
+    let added=0, guard=0;
+    while(added<per&&guard++<300){
+      const cand=new Map();
+      comp.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=key(q+dq,r+dr); if(!set.has(k)&&!cset.has(k)) cand.set(k,(cand.get(k)||0)+1); }));
+      if(!cand.size) break;
+      const best=[...cand.entries()].sort((a,b)=>b[1]-a[1])[0][0];
+      const [q,r]=best.split(',').map(Number);
+      comp.push([q,r]); cset.add(best); set.add(best); LAND.push([q,r]); added++;
+    }
+  });
+  return LAND;
+}
+function buildBoardData(variant, scenario, board, nPlayers){
   const seaMode = variant==='sea';
+  const bigBoard = (nPlayers||0)>=6; // 6+ players get a bigger board
   const scen = seaMode ? (SEA_SCENARIOS[scenario]||SEA_SCENARIOS.shores) : null;
   const scenId = seaMode ? (SEA_SCENARIOS[scenario]?scenario:'shores') : null;
   let cells; // [{q,r,land}]
@@ -151,7 +186,8 @@ function buildBoardData(variant, scenario, board){
         [-3,-3],[-2,-3],[-3,-2],
       ],
     };
-    const LAND=LAYOUTS[scenId];
+    const LAND=LAYOUTS[scenId].slice();
+    if(bigBoard) growIslands(LAND,12);
     const landSet=new Set(LAND.map(c=>c[0]+','+c[1]));
     const seaSet=new Set();
     const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -165,6 +201,13 @@ function buildBoardData(variant, scenario, board){
       const kit=seaKit(LAND.length,1);
       terrains=kit.terrains; numbers=kit.numbers;
     }
+  }else if(bigBoard){
+    // Classic XL board for 6+ players: full radius-4 island (61 hexes)
+    const rows=[{r:0,qs:[0,1,2,3,4]},{r:1,qs:[-1,0,1,2,3,4]},{r:2,qs:[-2,-1,0,1,2,3,4]},{r:3,qs:[-3,-2,-1,0,1,2,3,4]},{r:4,qs:[-4,-3,-2,-1,0,1,2,3,4]},{r:5,qs:[-4,-3,-2,-1,0,1,2,3]},{r:6,qs:[-4,-3,-2,-1,0,1,2]},{r:7,qs:[-4,-3,-2,-1,0,1]},{r:8,qs:[-4,-3,-2,-1,0]}];
+    cells=[];
+    rows.forEach(row=>row.qs.forEach(q=>cells.push({q:q, r:row.r, land:true})));
+    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','ore','ore','ore','ore','desert','desert','desert']);
+    numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,3,4,5,9]);
   }else{
     // Classic, large board: full radius-3 island (37 hexes)
     const rows=[{r:0,qs:[0,1,2,3]},{r:1,qs:[-1,0,1,2,3]},{r:2,qs:[-2,-1,0,1,2,3]},{r:3,qs:[-3,-2,-1,0,1,2,3]},{r:4,qs:[-3,-2,-1,0,1,2]},{r:5,qs:[-3,-2,-1,0,1]},{r:6,qs:[-3,-2,-1,0]}];
@@ -392,7 +435,7 @@ function avOf(p,i){ return (p&&p.avatar)||AVATARS[((i||0)%AVATARS.length+AVATARS
 function newGame(playerNames,botFlags,variant,scenario,avatars,board){
   clearSave();
   lastDeckSize=-1;
-  const b=buildBoardData(variant,scenario,board);
+  const b=buildBoardData(variant,scenario,board,playerNames.length);
   S={
     gid: Date.now()+'-'+Math.floor(Math.random()*1e9),
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
@@ -614,7 +657,7 @@ function hostOnData(conn,data){
     if(NET.started){ conn.send({t:'denied', reason:'game already started'}); setTimeout(()=>conn.close(),500); return; }
     if(idx>=0){ name=name+' '+(Object.keys(NET.conns).length+1); }
     idx=NET.lobbyPlayers.length;
-    if(idx>=6){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
+    if(idx>=8){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
     NET.lobbyPlayers.push({name:name, color:PLAYER_COLORS[idx].color, avatar:validAvatar(data.avatar,idx)});
     NET.conns[idx]=conn; conn._idx=idx; conn._name=name;
     conn.send({t:'welcome', idx:idx, code:NET.code});
@@ -2945,7 +2988,7 @@ function showMenu(){
   const ov=overlay(`<div class="menuHero">
       <img class="menuIcon" src="./icon-512.png" alt="Family Catan">
       <div class="menuTitle">Family Catan</div>
-      <p id="menuSub">2–6 players. Build, trade, race to 10 points!</p>
+      <p id="menuSub">2–8 players. Build, trade, race to 10 points!</p>
     </div>
     <div class="btnrow" id="mVarRow">
       <button class="btn" id="mVarC">🏝️ Classic</button>
@@ -2970,7 +3013,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v39</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v40</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -2991,7 +3034,7 @@ function showMenu(){
         srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>{ const sc2=SEA_SCENARIOS[k]; return `<button class="btn scenChip scenCard${k===menuScenario?' sel':''}" data-sc="${k}"><span class="scenMap">${miniMapSvg(k)}</span><span class="scenName">${sc2.icon} ${sc2.name}</span><span class="scenMeta">First to ${sc2.winVP} VP · ${sc2.desc}</span></button>`; }).join('');
       }
     }else{
-      if(sub) sub.textContent=menuBoard==='silk'?'🐫 Silk Road board: caravan camps pay 🐫 camels, silk workshops pay 🧵 silk — first to 10 points!':'2–6 players. Build, trade, race to 10 points!';
+      if(sub) sub.textContent=menuBoard==='silk'?'🐫 Silk Road board: caravan camps pay 🐫 camels, silk workshops pay 🧵 silk — first to 10 points!':'2–8 players. Build, trade, race to 10 points!';
       if(srow) srow.style.display='none';
     }
   };
@@ -3054,6 +3097,8 @@ function showMenu(){
         <button class="btn" data-n="3">3</button>
         <button class="btn" data-n="4">4</button>
         <button class="btn" data-n="5">5</button>
+        <button class="btn" data-n="6">6</button>
+        <button class="btn" data-n="7">7</button>
       </div>
       <div class="btnrow"><button class="btn" id="soloBack">← Back</button></div>`);
     const startSolo=(bn)=>{
@@ -3110,10 +3155,12 @@ function showLocalSetup(){
       <button class="btn primary" data-n="4">4</button>
       <button class="btn" data-n="5">5</button>
       <button class="btn" data-n="6">6</button>
+      <button class="btn" data-n="7">7</button>
+      <button class="btn" data-n="8">8</button>
     </div>
     <div id="nameFields"></div>
     <div class="btnrow"><button class="btn primary" id="startGo" style="font-size:1.1rem">▶ Start Game</button></div>`);
-  const avs=[0,1,2,3,4,5].map(i=>AVATARS[i%AVATARS.length]);
+  const avs=[0,1,2,3,4,5,6,7].map(i=>AVATARS[i%AVATARS.length]);
   const renderNames=()=>{
     const nf=ov.querySelector('#nameFields'); nf.innerHTML='';
     for(let i=0;i<n;i++){
