@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#a8e6b8" />
+<title>Pattern Builder — Bharat's Game World</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Fredoka:wght@500;600;700&display=swap");
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%}
+body{
+  font-family:"Fredoka",system-ui,sans-serif;color:#173b5f;overflow-x:hidden;min-height:100vh;
+  background:linear-gradient(180deg,#b8f1cc 0%,#eafff0 45%,#aee9ff 100%);
+  display:flex;flex-direction:column;align-items:center;padding:18px 14px 40px;
+}
+.topbar{width:min(680px,100%);display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.homeBtn{
+  text-decoration:none;font-weight:800;color:#17406b;background:rgba(255,255,255,.85);
+  padding:10px 16px;border-radius:999px;box-shadow:0 6px 14px rgba(40,100,140,.15);font-size:1.05rem;
+}
+.homeBtn:active{transform:translateY(2px)}
+h1{font-family:"Baloo 2",sans-serif;font-size:clamp(1.8rem,6vw,2.6rem);color:#1f7a4d;text-align:center;
+  text-shadow:0 3px 0 rgba(255,255,255,.9)}
+.subtitle{text-align:center;font-weight:700;color:#2c6b4a;margin:2px 0 12px}
+.stats{width:min(680px,100%);display:flex;gap:10px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+.stat{background:rgba(255,255,255,.88);border-radius:18px;padding:8px 18px;font-weight:800;color:#17406b;
+  box-shadow:0 6px 14px rgba(40,100,140,.12);font-size:1.05rem}
+.stat b{color:#ff7b54}
+#pattern{width:min(600px,100%);display:flex;gap:10px;justify-content:center;margin:6px 0 20px;flex-wrap:wrap}
+.tile{
+  width:clamp(64px,17vw,96px);aspect-ratio:1;border-radius:24px;background:#fff;
+  border:5px solid rgba(255,255,255,.8);box-shadow:0 6px 0 rgba(0,0,0,.08),0 12px 18px rgba(40,70,120,.14);
+  display:grid;place-items:center;font-size:clamp(2.2rem,10vw,3.4rem);
+}
+.tile.q{background:linear-gradient(180deg,#ffe29a,#ffcf5c);border-color:#fff;color:#b4541f;
+  font-family:"Baloo 2",sans-serif;font-weight:800;animation:bounce 1.2s ease-in-out infinite}
+.tile.filled{background:linear-gradient(180deg,#d8ffd0,#aef29a);animation:pop .45s ease}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+#choices{width:min(560px,100%);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;justify-content:center}
+.pick{
+  border:none;cursor:pointer;aspect-ratio:1;border-radius:28px;font-size:clamp(2.6rem,13vw,4rem);
+  background:#fff;border:6px solid rgba(255,255,255,.7);
+  box-shadow:0 8px 0 rgba(0,0,0,.08),0 14px 20px rgba(40,70,120,.14);
+  display:grid;place-items:center;transition:transform .12s;
+}
+.pick:active{transform:scale(.94)}
+.pick.wrong{animation:wiggle .4s ease}
+@keyframes wiggle{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}
+.overlay{position:fixed;inset:0;background:rgba(23,59,95,.55);display:none;place-items:center;z-index:50;padding:20px}
+.overlay.show{display:grid}
+.panel{background:#fff;border-radius:32px;padding:34px 30px;text-align:center;max-width:420px;width:100%;
+  border:6px solid #8fea55;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.panel h2{font-family:"Baloo 2",sans-serif;font-size:2rem;color:#ff7b54;margin-bottom:8px}
+.panel p{font-weight:700;color:#31526a;margin-bottom:18px}
+.btnRow{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.bigBtn{border:none;cursor:pointer;font-family:"Baloo 2",sans-serif;font-size:1.25rem;font-weight:800;color:#fff;
+  padding:14px 26px;border-radius:999px;background:linear-gradient(180deg,#8fea55,#3caf32);
+  box-shadow:0 6px 0 #267929;transition:transform .1s}
+.bigBtn:active{transform:translateY(4px);box-shadow:0 2px 0 #267929}
+.bigBtn.alt{background:linear-gradient(180deg,#8edcff,#3d9be9);box-shadow:0 6px 0 #1c5fa8}
+.bigBtn.alt:active{box-shadow:0 2px 0 #1c5fa8}
+.confetti{position:fixed;top:-40px;font-size:1.6rem;z-index:60;pointer-events:none;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="homeBtn" href="../">🏠 Home</a>
+  <div class="stat">⭐ <b id="stars">0</b></div>
+</div>
+<h1>🔢 Pattern Builder</h1>
+<div class="subtitle">Look at the pattern — what comes next? Tap it!</div>
+<div class="stats">
+  <div class="stat">Round <b id="round">1 / 8</b></div>
+</div>
+<div id="pattern"></div>
+<div id="choices"></div>
+
+<div class="overlay" id="winOverlay">
+  <div class="panel">
+    <h2>🎉 Pattern Master!</h2>
+    <p id="winText">You finished every pattern!</p>
+    <div class="btnRow">
+      <button class="bigBtn alt" id="againBtn">🔁 Play Again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ROUNDS = [
+  { seq: ["🔴","🔵","🔴"],        answer: "🔵", choices: ["🟢","🔵","🟡"] },
+  { seq: ["🍎","🍎","🍌"],        answer: "🍌", choices: ["🍌","🍇","🍊"] },
+  { seq: ["🐶","🐱","🐶"],        answer: "🐱", choices: ["🐭","🐶","🐱"] },
+  { seq: ["🌞","🌙","⭐","🌞"],   answer: "🌙", choices: ["⭐","🌈","🌙"] },
+  { seq: ["🟨","🟨","🟦"],        answer: "🟦", choices: ["🟦","🟨","🟩"] },
+  { seq: ["🦁","🐯","🦁"],        answer: "🐯", choices: ["🐯","🐻","🦁"] },
+  { seq: ["🍪","🥛","🍪"],        answer: "🥛", choices: ["🥛","🍩","🍪"] },
+  { seq: ["🔺","🔻","🔺"],        answer: "🔻", choices: ["🔻","🟢","🔺"] }
+];
+let roundIdx = 0, stars = 0, locked = false;
+let audioCtx = null;
+
+function tone(freq, dur=0.18, type="sine", vol=0.22, when=0){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const t = audioCtx.currentTime + when;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur);
+  }catch(e){}
+}
+const sndGood = ()=>{tone(660,0.12,"sine",0.22);tone(880,0.2,"sine",0.22,0.1);};
+const sndTry  = ()=>{tone(300,0.2,"sine",0.15);};
+const sndWin  = ()=>{[523,659,784,1047].forEach((f,i)=>tone(f,0.22,"sine",0.22,i*0.14));};
+
+function shuffle(a){ return [...a].sort(()=>Math.random()-0.5); }
+
+function confetti(n=40){
+  const emojis = ["🎉","⭐","🎈","🌟","💫","🥳"];
+  for(let i=0;i<n;i++){
+    const s = document.createElement("span");
+    s.className = "confetti";
+    s.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+    s.style.left = Math.random()*100 + "vw";
+    s.style.animationDuration = (2+Math.random()*2.5) + "s";
+    s.style.fontSize = (1+Math.random()*1.4) + "rem";
+    document.body.appendChild(s);
+    setTimeout(()=>s.remove(), 5000);
+  }
+}
+
+function renderRound(){
+  locked = false;
+  const r = ROUNDS[roundIdx];
+  document.getElementById("round").textContent = (roundIdx+1) + " / " + ROUNDS.length;
+  const pat = document.getElementById("pattern");
+  pat.innerHTML = "";
+  r.seq.forEach(emoji=>{
+    const t = document.createElement("div");
+    t.className = "tile";
+    t.textContent = emoji;
+    pat.appendChild(t);
+  });
+  const q = document.createElement("div");
+  q.className = "tile q";
+  q.id = "qTile";
+  q.textContent = "?";
+  pat.appendChild(q);
+
+  const box = document.getElementById("choices");
+  box.innerHTML = "";
+  shuffle(r.choices).forEach(emoji=>{
+    const b = document.createElement("button");
+    b.className = "pick";
+    b.textContent = emoji;
+    b.addEventListener("click", ()=>{
+      if(locked) return;
+      if(emoji === r.answer){
+        locked = true;
+        q.textContent = r.answer;
+        q.classList.remove("q");
+        q.classList.add("filled");
+        sndGood(); confetti(25);
+        stars++;
+        document.getElementById("stars").textContent = stars;
+        setTimeout(()=>{
+          roundIdx++;
+          if(roundIdx >= ROUNDS.length) win(); else renderRound();
+        }, 1200);
+      } else {
+        sndTry();
+        b.classList.add("wrong");
+        setTimeout(()=>b.classList.remove("wrong"), 450);
+      }
+    });
+    box.appendChild(b);
+  });
+}
+
+function win(){
+  sndWin(); confetti(70);
+  document.getElementById("winText").textContent =
+    "You solved all " + ROUNDS.length + " patterns and earned " + stars + " ⭐!";
+  document.getElementById("winOverlay").classList.add("show");
+}
+
+document.getElementById("againBtn").onclick = ()=>{
+  document.getElementById("winOverlay").classList.remove("show");
+  roundIdx = 0; stars = 0;
+  document.getElementById("stars").textContent = "0";
+  renderRound();
+};
+
+renderRound();
+</script>
+</body>
+</html>
