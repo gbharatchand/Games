@@ -473,8 +473,12 @@ function newGame(playerNames,botFlags,variant,scenario,avatars,board){
     bots:playerNames.map((_,i)=>!!(botFlags&&botFlags[i])),
   };
   const n=S.players.length;
-  for(let i=0;i<n;i++) S.setupQueue.push(i);
-  for(let i=n-1;i>=0;i--) S.setupQueue.push(i);
+  // Random starting player: setup snakes forward then back from whoever starts,
+  // and that player also takes the first turn of the game (never always the host).
+  const start=Math.floor(Math.random()*n);
+  const order=[]; for(let i=0;i<n;i++) order.push((start+i)%n);
+  order.forEach(i=>S.setupQueue.push(i));
+  for(let i=n-1;i>=0;i--) S.setupQueue.push(order[i]);
   S.turn=S.setupQueue[0]; S.mode='setupSettlement';
   addLog('Game started! '+n+' players. Place your first settlement + road.');
 }
@@ -611,12 +615,14 @@ function hostRoom(name){
 /* ---- Host: restore a room after the host's page died (refresh/crash) ----
    Same room code, same saved game. Players rejoin by name and pick up
    exactly where the game left off — a host refresh no longer ends it. */
-function restoreHostRoom(save){
+// Room codes use the same alphabet as makeCode (no I/O/0/1 to avoid confusion).
+function cleanRoomCode(v){ return String(v||'').toUpperCase().replace(/[^ABCDEFGHJKMNPQRSTUVWXYZ23456789]/g,'').slice(0,4); }
+function restoreHostRoom(save, codeOverride){
   S=save.S;
   NET.mode='online'; NET.isHost=true;
   NET.myIdx=(save.net&&save.net.myIdx)||0;
   NET.myName=(save.net&&save.net.myName)||'Player';
-  NET.code=save.net.code;
+  NET.code=codeOverride||save.net.code;
   NET.lobbyPlayers=(save.net&&save.net.lobby&&save.net.lobby.length)
     ? save.net.lobby
     : S.players.map(p=>({name:p.name, color:p.color, avatar:p.avatar}));
@@ -843,7 +849,7 @@ function applyAct(idx,a){
       S.setupIdx++; S.setupVertex=null;
       if(S.setupIdx>=S.setupQueue.length){
         S.phase='play'; S.turn=S.setupQueue[0]; S.rolled=false; S.mode=null;
-        addLog('Setup done! Game begins.');
+        addLog('Setup done! '+S.players[S.turn].name+' goes first. 🎲');
       }else{
         S.turn=S.setupQueue[S.setupIdx]; S.setupSub='settlement'; S.mode='setupSettlement';
       }
@@ -2993,9 +2999,9 @@ function showMenu(){
     if(save.net.mode==='local'){
       resumeHtml=`<div class="btnrow"><button class="btn green" id="mResume">▶ Resume last game (${save.S.players.length}P)</button></div>`;
     }else if(save.net.mode==='online'&&!save.net.isHost&&save.net.code){
-      resumeHtml=`<div class="btnrow"><button class="btn green" id="mRejoin">🔄 Rejoin room ${escapeHtml(save.net.code)}</button></div>`;
+      resumeHtml=`<div class="btnrow" style="align-items:center"><span>🔄 Rejoin room</span><input id="mRejoinCode" value="${escapeHtml(save.net.code)}" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="btn green" id="mRejoin">Rejoin</button></div>`;
     }else if(save.net.mode==='online'&&save.net.isHost&&save.net.code){
-      resumeHtml=`<div class="btnrow"><button class="btn green" id="mRestore">🌐 Restore room ${escapeHtml(save.net.code)} — you host, players rejoin</button></div>`;
+      resumeHtml=`<div class="btnrow" style="align-items:center"><span>🌐 Restore room</span><input id="mRestoreCode" value="${escapeHtml(save.net.code)}" maxlength="4" autocapitalize="characters" autocomplete="off"><button class="btn green" id="mRestore">Restore</button></div>`;
     }
   }
   const ov=overlay(`<div class="menuHero">
@@ -3026,7 +3032,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v41</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v42</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -3080,19 +3086,23 @@ function showMenu(){
   const rj=ov.querySelector('#mRejoin');
   if(rj) rj.onclick=async()=>{
     const err=ov.querySelector('#menuErr');
+    const code=cleanRoomCode(ov.querySelector('#mRejoinCode').value);
+    if(code.length!==4){ err.textContent='Code must be 4 letters or numbers.'; return; }
     err.textContent='Rejoining…';
     try{
       NET.mode='online';
-      await joinRoom(save.net.code, save.net.myName||'Player', true);
+      await joinRoom(code, save.net.myName||'Player', true);
       closeOverlay();
     }catch(e){ err.textContent=e.message; NET.mode=null; setNetStatus('offline','off'); }
   };
   const rs=ov.querySelector('#mRestore');
   if(rs) rs.onclick=()=>{
     const err=ov.querySelector('#menuErr');
+    const code=cleanRoomCode(ov.querySelector('#mRestoreCode').value);
+    if(code.length!==4){ err.textContent='Code must be 4 letters or numbers.'; return; }
     err.textContent='Restoring room…';
     closeOverlay();
-    restoreHostRoom(save);
+    restoreHostRoom(save, code);
   };
   ov.querySelector('#mLocal').onclick=()=>{
     closeOverlay();
