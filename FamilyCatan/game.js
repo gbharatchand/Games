@@ -56,6 +56,8 @@ const PLAYER_COLORS = [
   { name:'Blue',   color:'#3498db' },
   { name:'Orange', color:'#f39c12' },
   { name:'White',  color:'#f5f5f5' },
+  { name:'Green',  color:'#27ae60' },
+  { name:'Purple', color:'#9b59b6' },
 ];
 const WIN_VP = 10;
 const PEER_PREFIX = 'familycatan-v1-';
@@ -612,7 +614,7 @@ function hostOnData(conn,data){
     if(NET.started){ conn.send({t:'denied', reason:'game already started'}); setTimeout(()=>conn.close(),500); return; }
     if(idx>=0){ name=name+' '+(Object.keys(NET.conns).length+1); }
     idx=NET.lobbyPlayers.length;
-    if(idx>=4){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
+    if(idx>=6){ conn.send({t:'denied', reason:'room full'}); setTimeout(()=>conn.close(),500); return; }
     NET.lobbyPlayers.push({name:name, color:PLAYER_COLORS[idx].color, avatar:validAvatar(data.avatar,idx)});
     NET.conns[idx]=conn; conn._idx=idx; conn._name=name;
     conn.send({t:'welcome', idx:idx, code:NET.code});
@@ -2943,7 +2945,7 @@ function showMenu(){
   const ov=overlay(`<div class="menuHero">
       <img class="menuIcon" src="./icon-512.png" alt="Family Catan">
       <div class="menuTitle">Family Catan</div>
-      <p id="menuSub">2–4 players. Build, trade, race to 10 points!</p>
+      <p id="menuSub">2–6 players. Build, trade, race to 10 points!</p>
     </div>
     <div class="btnrow" id="mVarRow">
       <button class="btn" id="mVarC">🏝️ Classic</button>
@@ -2968,7 +2970,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v38</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v39</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
@@ -2989,7 +2991,7 @@ function showMenu(){
         srow.innerHTML=Object.keys(SEA_SCENARIOS).map(k=>{ const sc2=SEA_SCENARIOS[k]; return `<button class="btn scenChip scenCard${k===menuScenario?' sel':''}" data-sc="${k}"><span class="scenMap">${miniMapSvg(k)}</span><span class="scenName">${sc2.icon} ${sc2.name}</span><span class="scenMeta">First to ${sc2.winVP} VP · ${sc2.desc}</span></button>`; }).join('');
       }
     }else{
-      if(sub) sub.textContent=menuBoard==='silk'?'🐫 Silk Road board: caravan camps pay 🐫 camels, silk workshops pay 🧵 silk — first to 10 points!':'2–4 players. Build, trade, race to 10 points!';
+      if(sub) sub.textContent=menuBoard==='silk'?'🐫 Silk Road board: caravan camps pay 🐫 camels, silk workshops pay 🧵 silk — first to 10 points!':'2–6 players. Build, trade, race to 10 points!';
       if(srow) srow.style.display='none';
     }
   };
@@ -3050,6 +3052,8 @@ function showMenu(){
         <button class="btn" data-n="1">1</button>
         <button class="btn primary" data-n="2">2</button>
         <button class="btn" data-n="3">3</button>
+        <button class="btn" data-n="4">4</button>
+        <button class="btn" data-n="5">5</button>
       </div>
       <div class="btnrow"><button class="btn" id="soloBack">← Back</button></div>`);
     const startSolo=(bn)=>{
@@ -3104,10 +3108,12 @@ function showLocalSetup(){
       <button class="btn" data-n="2">2</button>
       <button class="btn" data-n="3">3</button>
       <button class="btn primary" data-n="4">4</button>
+      <button class="btn" data-n="5">5</button>
+      <button class="btn" data-n="6">6</button>
     </div>
     <div id="nameFields"></div>
     <div class="btnrow"><button class="btn primary" id="startGo" style="font-size:1.1rem">▶ Start Game</button></div>`);
-  const avs=[0,1,2,3].map(i=>AVATARS[i%AVATARS.length]);
+  const avs=[0,1,2,3,4,5].map(i=>AVATARS[i%AVATARS.length]);
   const renderNames=()=>{
     const nf=ov.querySelector('#nameFields'); nf.innerHTML='';
     for(let i=0;i<n;i++){
