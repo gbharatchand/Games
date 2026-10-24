@@ -117,16 +117,26 @@ function growIslands(LAND, extra){
   const biggest=Math.max(...comps.map(c=>c.length));
   const targets=comps.filter(c=>c.length===biggest);
   const per=Math.floor(extra/targets.length);
-  targets.forEach(comp=>{
+  const grownBy=new Map(); // cell key -> target index, so two growing islands can't meet
+  targets.forEach((comp,ti)=>{
     const cset=new Set(comp.map(c=>key(c[0],c[1])));
+    // never grow into a cell touching another island: that would merge islands
+    const otherSet=new Set();
+    comps.forEach(o=>{ if(o!==comp) o.forEach(c=>otherSet.add(key(c[0],c[1]))); });
     let added=0, guard=0;
     while(added<per&&guard++<300){
       const cand=new Map();
-      comp.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=key(q+dq,r+dr); if(!set.has(k)&&!cset.has(k)) cand.set(k,(cand.get(k)||0)+1); }));
+      comp.forEach(([q,r])=>DIRS.forEach(([dq,dr])=>{ const k=key(q+dq,r+dr);
+        if(set.has(k)||cset.has(k)) return;
+        // reject if the cell touches another island or another target's growth
+        const [cq,cr]=k.split(',').map(Number);
+        if(DIRS.some(([dq2,dr2])=>otherSet.has(key(cq+dq2,cr+dr2)))) return;
+        if(DIRS.some(([dq2,dr2])=>{ const g=grownBy.get(key(cq+dq2,cr+dr2)); return g!==undefined&&g!==ti; })) return;
+        cand.set(k,(cand.get(k)||0)+1); }));
       if(!cand.size) break;
       const best=[...cand.entries()].sort((a,b)=>b[1]-a[1])[0][0];
       const [q,r]=best.split(',').map(Number);
-      comp.push([q,r]); cset.add(best); set.add(best); LAND.push([q,r]); added++;
+      comp.push([q,r]); cset.add(best); set.add(best); grownBy.set(best,ti); LAND.push([q,r]); added++;
     }
   });
   return LAND;
@@ -187,7 +197,7 @@ function buildBoardData(variant, scenario, board, nPlayers){
       ],
     };
     const LAND=LAYOUTS[scenId].slice();
-    if(bigBoard) growIslands(LAND,12);
+    if(bigBoard) growIslands(LAND,18);
     const landSet=new Set(LAND.map(c=>c[0]+','+c[1]));
     const seaSet=new Set();
     const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -202,12 +212,15 @@ function buildBoardData(variant, scenario, board, nPlayers){
       terrains=kit.terrains; numbers=kit.numbers;
     }
   }else if(bigBoard){
-    // Classic XL board for 6+ players: full radius-4 island (61 hexes)
+    // Classic XL board for 6+ players: radius-4 island (61) + 6 extra tiles (67)
     const rows=[{r:0,qs:[0,1,2,3,4]},{r:1,qs:[-1,0,1,2,3,4]},{r:2,qs:[-2,-1,0,1,2,3,4]},{r:3,qs:[-3,-2,-1,0,1,2,3,4]},{r:4,qs:[-4,-3,-2,-1,0,1,2,3,4]},{r:5,qs:[-4,-3,-2,-1,0,1,2,3]},{r:6,qs:[-4,-3,-2,-1,0,1,2]},{r:7,qs:[-4,-3,-2,-1,0,1]},{r:8,qs:[-4,-3,-2,-1,0]}];
+    const xlCoords=[];
+    rows.forEach(row=>row.qs.forEach(q=>xlCoords.push([q,row.r])));
+    growIslands(xlCoords,6);
     cells=[];
-    rows.forEach(row=>row.qs.forEach(q=>cells.push({q:q, r:row.r, land:true})));
-    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','ore','ore','ore','ore','desert','desert','desert']);
-    numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,3,4,5,9]);
+    xlCoords.forEach(([q,r])=>cells.push({q:q, r:r, land:true}));
+    terrains=shuffle(['wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wood','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','wheat','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','sheep','brick','brick','brick','brick','brick','brick','brick','brick','brick','brick','ore','ore','ore','ore','ore','ore','ore','ore','ore','ore','ore','desert','desert','desert']);
+    numbers=shuffle([2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12,3,4,5,9,3,4,6,8,9,11]);
   }else{
     // Classic, large board: full radius-3 island (37 hexes)
     const rows=[{r:0,qs:[0,1,2,3]},{r:1,qs:[-1,0,1,2,3]},{r:2,qs:[-2,-1,0,1,2,3]},{r:3,qs:[-3,-2,-1,0,1,2,3]},{r:4,qs:[-3,-2,-1,0,1,2]},{r:5,qs:[-3,-2,-1,0,1]},{r:6,qs:[-3,-2,-1,0]}];
@@ -3013,7 +3026,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v40</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v41</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
