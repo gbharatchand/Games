@@ -44,11 +44,14 @@ const DEV_INFO = {
   plenty:  { icon:'🌾', name:'Year of Plenty' },
   monopoly:{ icon:'👑', name:'Monopoly' },
 };
-function buildDevDeck(){
+function buildDevDeck(nPlayers){
   const d=[];
-  for(let i=0;i<14;i++) d.push('knight');
-  for(let i=0;i<5;i++) d.push('vp');
-  for(let i=0;i<2;i++){ d.push('road'); d.push('plenty'); d.push('monopoly'); }
+  const decks=(nPlayers||0)>=6?2:1; // 6+ player games get a double deck (50 cards)
+  for(let k=0;k<decks;k++){
+    for(let i=0;i<14;i++) d.push('knight');
+    for(let i=0;i<5;i++) d.push('vp');
+    for(let i=0;i<2;i++){ d.push('road'); d.push('plenty'); d.push('monopoly'); }
+  }
   return shuffle(d);
 }
 const PLAYER_COLORS = [
@@ -452,7 +455,7 @@ function newGame(playerNames,botFlags,variant,scenario,avatars,board){
   S={
     gid: Date.now()+'-'+Math.floor(Math.random()*1e9),
     hexes:b.hexes, vertices:b.vertices, edges:b.edges, robberHex:b.robberHex,
-    ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(),
+    ports:b.ports, boardCx:b.boardCx, devDeck:buildDevDeck(playerNames.length),
     variant: variant==='sea'?'sea':'classic',
     scenario: variant==='sea'?(SEA_SCENARIOS[scenario]?scenario:'shores'):null,
     board: variant==='sea'?null:(board==='silk'?'silk':'standard'),
@@ -3032,7 +3035,7 @@ function showMenu(){
       <button class="btn green" id="mJoin">Join room</button>
     </div>
     <p id="menuErr" style="color:#b03a2e;font-weight:700"></p>
-    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v42</p>`);
+    <p style="text-align:center;opacity:.45;font-size:.72rem;margin:6px 0 0">Family Catan v43</p>`);
   const name=()=>ov.querySelector('#menuName').value.trim()||'Player';
   const paintVar=()=>{
     ov.querySelector('#mVarC').classList.toggle('primary', menuVariant==='classic');
